@@ -19,6 +19,16 @@ Le site le déchiffre dans le navigateur une fois le mot de passe saisi.
 - Le fichier chiffré est public : choisir un mot de passe long (16 caractères minimum, imposé par le script).
 - Un accès donné ne se retire pas : ce qui a été déchiffré a pu être copié. Changer le mot de passe protège les versions suivantes.
 
+## Lien d'invitation
+
+`https://famille.rospars.me/#mdp=LE-MOT-DE-PASSE` pré-remplit le mot de passe : la personne n'a plus qu'à cliquer sur « Ouvrir ».
+Le paramètre est lu puis retiré de la barre d'adresse au chargement : l'adresse visible, copiée ou partagée ensuite ne le contient plus.
+
+- Préférer `#mdp=` à `?mdp=` (accepté aussi) : ce qui suit `#` n'est jamais envoyé au serveur.
+- Encoder les caractères spéciaux du mot de passe (`encodeURIComponent`).
+- Le lien lui-même reste une clé : l'envoyer comme on enverrait le mot de passe. Certains navigateurs peuvent
+  garder l'adresse d'origine dans leur historique global.
+
 ## Les données en clair
 
 Elles vivent dans `private/`, **ignoré par Git** (`.gitignore`) et jamais publié :

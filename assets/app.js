@@ -15,12 +15,14 @@
   }
   form.addEventListener("submit", async e => {
     e.preventDefault();
-    btn.disabled = true; msg.textContent = "Déchiffrement…";
+    btn.disabled = true; msg.classList.add("ok"); msg.textContent = "Déchiffrement…";
     try {
       const data = await Vault.unlockWithPassword(pw.value, document.getElementById("remember").checked);
       pw.value = ""; msg.textContent = "";
+      msg.classList.remove("ok");
       start(data);
     } catch (err) {
+      msg.classList.remove("ok");
       msg.textContent = err && err.message === "vault"
         ? "Les données sont introuvables. Réessayez plus tard."
         : "Mot de passe incorrect.";
@@ -28,7 +30,33 @@
     } finally { btn.disabled = false; }
   });
   document.getElementById("logout").addEventListener("click", () => { Vault.forget(); location.hash = ""; location.reload(); });
-  Vault.unlockFromStorage().then(d => { if (d) start(d); else pw.focus(); }).catch(() => pw.focus());
+  // Invitation link: …/#mdp=… (or ?mdp=…). The password is read, then removed from the
+  // address bar and history so the link shown or copied afterwards no longer carries it.
+  function takePasswordFromUrl() {
+    const url = new URL(location.href);
+    let value = url.searchParams.get("mdp");
+    let found = value !== null;
+    if (found) url.searchParams.delete("mdp");
+    const m = url.hash.match(/^#mdp=(.*)$/);
+    if (m) {
+      found = true;
+      try { value = decodeURIComponent(m[1].replace(/\+/g, " ")); } catch (e) { value = m[1]; }
+      url.hash = "";
+    }
+    if (!found) return null;
+    history.replaceState(null, "", url.pathname + url.search + url.hash);
+    return value;
+  }
+  const fromUrl = takePasswordFromUrl();
+  function prefill() {
+    if (fromUrl) {
+      pw.value = fromUrl;
+      msg.textContent = "Mot de passe pré-rempli depuis le lien d'invitation. Cliquez sur « Ouvrir ».";
+      msg.classList.add("ok");
+      btn.focus();
+    } else pw.focus();
+  }
+  Vault.unlockFromStorage().then(d => { if (d) start(d); else prefill(); }).catch(prefill);
 })();
 
 function run(data) {
