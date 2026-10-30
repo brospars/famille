@@ -3,3 +3,5 @@ node_modules/
 private/
 .env
 _site/
+famille-donnees-privees.zip
+*.zip

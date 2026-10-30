@@ -265,7 +265,8 @@ function run(data) {
   // continues the direct line (highlighted). Its parents' families come next, father first.
   function buildFamily(fId, mId, line) {
     const kids = childrenOfCouple(fId, mId).map(c => c.id);
-    const fam = { id: famId(fId, mId), fam: true, f: fId, m: mId, line, kids, rows: [], children: [] };
+    const fam = { id: `fam:${fId || "?"}:${mId || "?"}`, fam: true, f: fId, m: mId, line,
+      kids, rows: familyRows(kids, line, !line), children: [] };
     [fId, mId].forEach(pid => {
       const p = pid && people.get(pid);
       if (!p) return;
@@ -274,17 +275,14 @@ function run(data) {
     });
     return fam;
   }
-  const famId = (f, m) => `fam:${f || "?"}:${m || "?"}`;
-  // Rows of a family card: each child; a child who has a card of their own (lineSet) is shown
-  // in bold and not expanded. Any other child is followed, indented, by each spouse ("∞ Name")
-  // and the children of that couple, recursively.
-  function familyRows(kids, lineSet, isStart) {
+  // Rows of a family card: each child, then for a child off the direct line, indented,
+  // each spouse ("∞ Name") followed by the children of that couple, recursively.
+  function familyRows(kids, line, isStart) {
     const rows = [];
     const walk = (id, depth, seen) => {
       if (seen.has(id)) return; seen.add(id);
-      const onLine = lineSet.has(id) || (isStart && START.includes(id));
-      rows.push({ id, depth, kind: "kid", onLine });
-      if (onLine) return;
+      rows.push({ id, depth, kind: "kid", onLine: id === line || (isStart && START.includes(id)) });
+      if (id === line || (isStart && START.includes(id))) return;
       unionsOf(id).forEach(u => {
         const other = u.husband === id ? u.wife : u.husband;
         if (other && people.has(other)) rows.push({ id: other, depth: depth + 1, kind: "spouse" });
@@ -296,49 +294,17 @@ function run(data) {
     kids.forEach(id => walk(id, 0, seen));
     return rows;
   }
-  // The family view is a forest: the starting family plus settings.extraFamilies (couples of
-  // collateral branches). Each extra card sits one column left of its parents' family, next to
-  // the card it relates to, and links to that family; its own ancestry is not developed.
-  let extraLinks = [];
   function buildFamilyRoot() {
     const first = people.get(START[0]);
     const root = buildFamily(first.father, first.mother, null);
-    const rootFam = root.id;
     root.id = ROOT_ID; root.start = true;
-    const forest = { id: "__forest", forest: true, children: [root] };
-    const index = new Map();
-    const walk = (n, parent) => { if (n.fam) index.set(n === root ? rootFam : n.id, { n, parent }); (n.children || []).forEach(c => walk(c, n)); };
-    walk(forest, null);
-    extraLinks = [];
-    let pending = (S.extraFamilies || []).filter(([f, m]) => !index.has(famId(f, m)));
-    for (let pass = 0; pass < 5 && pending.length; pass++) {
-      pending = pending.filter(([f, m]) => {
-        let P = null;
-        for (const pid of [f, m]) {
-          const p = people.get(pid);
-          if (p && index.has(famId(p.father, p.mother))) { P = index.get(famId(p.father, p.mother)); break; }
-        }
-        if (!P || !P.parent || P.parent.forest) return true; // retry later (or impossible)
-        const Q = P.parent, R = index.get(Q === root ? rootFam : Q.id)?.parent || forest;
-        const kids = childrenOfCouple(f, m).map(c => c.id);
-        const E = { id: famId(f, m), fam: true, extra: true, f, m, kids, rows: [], children: [] };
-        const at = R.children.indexOf(Q);
-        R.children.splice(Q.children[0] === P.n ? at : at + 1, 0, E);
-        index.set(E.id, { n: E, parent: R });
-        extraLinks.push({ from: E.id, to: P.n.id });
-        return false;
-      });
-    }
-    const lineSet = new Set();
-    index.forEach(({ n }) => { if (n.f) lineSet.add(n.f); if (n.m) lineSet.add(n.m); });
-    index.forEach(({ n }) => { n.rows = familyRows(n.kids, lineSet, !!n.start); });
-    return forest;
+    return root;
   }
 
   // ----- sizes -----
   const famH = data => (data.fam ? FAM_HEAD + Math.max(1, data.rows.length) * FAM_LINE + FAM_PAD : NODE_H);
   const rootH = () => SIB_HEAD + START.length * SIB_LINE + 8;
-  const blockH = data => (data.forest ? 1 : familyMode ? famH(data) : data.id === ROOT_ID ? rootH() : NODE_H);
+  const blockH = data => (familyMode ? famH(data) : data.id === ROOT_ID ? rootH() : NODE_H);
   const nodeH = d => blockH(d.data);
   const curW = () => (familyMode ? FAM_W : NODE_W);
   const curCol = () => (familyMode ? FAM_COL : COL);
@@ -346,7 +312,6 @@ function run(data) {
   function findNode(id) {
     const all = layout.descendants();
     if (familyMode) {
-      if (id === ROOT_ID) return all.find(n => n.data.id === ROOT_ID);
       return all.find(n => n.data.fam && (n.data.f === id || n.data.m === id))
         || all.find(n => n.data.fam && n.data.rows.some(r => r.id === id));
     }
@@ -364,10 +329,7 @@ function run(data) {
   function trimText(t, max) { return t.length > max ? t.slice(0, max - 1) + "…" : t; }
   function drawLinks() {
     const W = curW();
-    const byId = new Map(layout.descendants().map(n => [n.data.id, n]));
-    const links = layout.links().filter(l => !l.source.data.forest && !l.target.data.extra);
-    if (familyMode) extraLinks.forEach(x => { const a = byId.get(x.from), b = byId.get(x.to); if (a && b) links.push({ source: a, target: b }); });
-    gLinks.selectAll("path").data(links).join("path").attr("class", "link")
+    gLinks.selectAll("path").data(layout.links()).join("path").attr("class", "link")
       .attr("d", d => {
         const sx = d.source.y + W, sy = d.source.x, tx = d.target.y, ty = d.target.x, mx = (sx + tx) / 2;
         return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
@@ -420,13 +382,13 @@ function run(data) {
   }
 
   function drawFamilies() {
-    layout.descendants().filter(d => !d.data.forest).forEach(d => {
+    layout.descendants().forEach(d => {
       const g = gNodes.append("g").attr("transform", `translate(${d.y},${d.x})`);
       if (d.data.ghost) return ghostCard(g, `Parents de ${trimText(firstGiven(people.get(d.data.of)) + " " + surname(people.get(d.data.of)), 20)}`, "à rechercher");
       const { f, m, kids, line } = d.data;
       const fa = people.get(f), mo = people.get(m);
       const H = famH(d.data), W = FAM_W, top = -H / 2;
-      g.attr("class", `fam${d.data.start ? " start-fam" : ""}${d.data.extra ? " extra-fam" : ""}`);
+      g.attr("class", `fam${d.data.start ? " start-fam" : ""}`);
       g.append("rect").attr("class", "fam-box").attr("rx", 10).attr("width", W).attr("height", H).attr("y", top);
       // title: "Famille Benoît & Agnese", each first name opens that parent's card
       const t = g.append("text").attr("class", "fam-title").attr("x", 12).attr("y", top + 20);
@@ -467,7 +429,7 @@ function run(data) {
   });
 
   function bounds() {
-    const n = layout.descendants().filter(d => !d.data.forest), W = curW();
+    const n = layout.descendants(), W = curW();
     return { x0: d3.min(n, d => d.y) - 20, x1: d3.max(n, d => d.y) + W + 20, y0: d3.min(n, d => d.x - nodeH(d) / 2) - 40, y1: d3.max(n, d => d.x + nodeH(d) / 2) + 20 };
   }
   function fit(animate) {
@@ -479,10 +441,10 @@ function run(data) {
   }
   function centerOn(id, select) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight;
-    const d = id === ROOT_ID ? layout.descendants().find(n => n.data.id === ROOT_ID) : findNode(id);
+    const d = id === ROOT_ID ? layout : findNode(id);
     if (!d) { if (select) openPerson(id); return; }
     const k = W < 600 ? 0.85 : 1;
-    const x = d.data.id === ROOT_ID ? 16 + (W < 600 ? 0 : 24) : W / 2 - (curW() * k) / 2;
+    const x = d.depth === 0 ? 16 + (W < 600 ? 0 : 24) : W / 2 - (curW() * k) / 2;
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - d.x * k).scale(k));
     if (select) openPerson(id);
   }
