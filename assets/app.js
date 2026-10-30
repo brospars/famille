@@ -49,6 +49,7 @@ function run(data) {
     let s = y;
     if (m && day) s = `${+day === 1 ? "1er" : +day} ${MONTHS[+m - 1]} ${y}`;
     else if (m) s = `${MONTHS[+m - 1]} ${y}`;
+    if (d.approx) s = `vers ${s}`;
     if (d.time) { const [h, mi] = d.time.split(":"); s += ` à ${+h} h ${mi}`; }
     return d.original ? `${d.original} (${s})` : s;
   }
@@ -65,16 +66,16 @@ function run(data) {
   const fullName = p => `${given(p)}${surname(p) ? " " + surname(p) : ""}`;
   function lifespan(p) {
     if (hidden(p)) return "Personne vivante";
-    const b = year(p.birth), d = year(p.death);
+    const b = year(p.birth) && (p.birth.approx ? "v. " : "") + year(p.birth), d = year(p.death);
     if (b && d) return `${b} – ${d}`;
-    if (b) return `né${p.sex === "F" ? "e" : ""} en ${b}`;
+    if (b) return p.birth.approx ? `né${p.sex === "F" ? "e" : ""} vers ${year(p.birth)}` : `né${p.sex === "F" ? "e" : ""} en ${b}`;
     if (d) return `† ${d}`;
     const u = unionsOf(p.id).find(u => u.date);
     return u ? `marié${p.sex === "F" ? "e" : ""} en ${u.date.slice(0, 4)}` : "";
   }
   const unionsOf = id => unions.filter(u => u.husband === id || u.wife === id);
   const childrenOf = id => family.persons.filter(c => c.father === id || c.mother === id);
-  const STATUS = { doc: "Relevé familial", oral: "Transmis oralement", unknown: "À rechercher" };
+  const STATUS = { doc: "Document familial ou officiel", oral: "Transmis oralement", tree: "Arbre public, à vérifier", unknown: "À rechercher" };
 
   // Sosa numbers relative to the first root
   const sosa = new Map();
@@ -156,6 +157,7 @@ function run(data) {
       <span class="badge">${STATUS[p.status] || ""}</span>
       ${hidden(p) ? `<p class="note">Personne vivante : dates et lieux masqués.</p>` : (dl ? `<dl>${dl}</dl>` : `<p class="note">Aucune date ni aucun lieu connus pour l'instant.</p>`)}
       ${p.notes ? `<p class="note">${esc(p.notes)}</p>` : ""}
+      ${p.source ? `<p class="src">Source : ${esc(p.source)}</p>` : ""}
       ${(father || mother) ? `<h3>Parents</h3><div class="rel">${relButton(father, "père")}${relButton(mother, "mère")}</div>` : ""}
       ${us.length ? `<h3>Conjoint${us.length > 1 ? "s" : ""}</h3><div class="rel">${us.map(u => relButton(people.get(u.husband === id ? u.wife : u.husband), p.sex === "F" ? "époux" : "épouse")).join("")}</div>` : ""}
       ${kids.length ? `<h3>Enfant${kids.length > 1 ? "s" : ""}</h3><div class="rel">${kids.map(k => relButton(k, k.sex === "F" ? "fille" : "fils")).join("")}</div>` : ""}
