@@ -161,7 +161,7 @@ function run(data) {
   const panelBody = document.getElementById("panel-body");
   document.getElementById("panel-close").addEventListener("click", closePanel);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closePanel(); });
-  function closePanel() { panel.hidden = true; d3.selectAll(".node,.sib,.sibx-row").classed("selected", false); currentPanelId = null; }
+  function closePanel() { panel.hidden = true; d3.selectAll("#tree [data-person]").classed("selected", false); currentPanelId = null; }
 
   function eventRow(label, d) {
     if (!d || (!d.date && !d.place)) return "";
@@ -205,9 +205,7 @@ function run(data) {
       <div class="actions"><button type="button" class="btn" data-center="${esc(id)}">Voir dans l'arbre</button></div>`;
     panel.hidden = false;
     currentPanelId = id;
-    d3.selectAll(".sibx-row").classed("selected", s => s === id);
-    d3.selectAll(".node").classed("selected", d => d && d.data.id === id);
-    d3.selectAll(".sib").classed("selected", s => s === id);
+    d3.selectAll("#tree [data-person]").classed("selected", function () { return this.getAttribute("data-person") === id; });
   }
   document.addEventListener("click", e => {
     const t = e.target.closest("[data-person],[data-place],[data-center]");
@@ -218,148 +216,197 @@ function run(data) {
   });
 
   // ---------- tree ----------
+  // Two views share one SVG: "personnes" (one card per ancestor) and "familles" (one card per
+  // couple, listing all its children; the child on the direct line is highlighted).
   const svg = d3.select("#tree");
   const gRoot = svg.append("g");
+  const gAxis = gRoot.append("g").attr("class", "gen-axis");
   const gLinks = gRoot.append("g");
   const gNodes = gRoot.append("g");
-  const NODE_W = 210, NODE_H = 54, COL = 260, ROW = 66;
+  const NODE_W = 210, NODE_H = 54, COL = 260, GAP = 12;
   const SIB_HEAD = 30, SIB_LINE = 24;
-  // Sibling box under a card (shown with the "Frères et sœurs" switch)
-  const SX_GAP = 6, SX_HEAD = 20, SX_LINE = 20, SX_PAD = 6, GAP = 12;
-  const sibToggle = document.getElementById("show-siblings");
-  let showSiblings = !!S.showSiblingsByDefault;
-  try { const v = localStorage.getItem("famille-freres"); if (v !== null) showSiblings = v === "1"; } catch (e) {}
-  sibToggle.checked = showSiblings;
+  const FAM_W = 252, FAM_COL = 300, FAM_HEAD = 46, FAM_LINE = 21, FAM_PAD = 10;
   const zoom = d3.zoom().scaleExtent([0.15, 2.5]).on("zoom", ev => gRoot.attr("transform", ev.transform));
   svg.call(zoom).on("dblclick.zoom", null);
   const ROOT_ID = "__start";
+  const modeToggle = document.getElementById("family-view");
+  let familyMode = !!S.familyViewByDefault;
+  try { const v = localStorage.getItem("famille-vue"); if (v !== null) familyMode = v === "familles"; } catch (e) {}
+  modeToggle.checked = familyMode;
+  const famLegend = document.querySelector(".fam-legend");
+  const syncLegend = () => { famLegend.hidden = !familyMode; };
+  syncLegend();
   let layout;
+  const firstGiven = p => (p && p.given ? p.given.split(/\s+/)[0] : "?");
+  const birthKey = p => (p.birth && p.birth.date) || "9999";
+  const childrenOfCouple = (f, m) => family.persons
+    .filter(c => (f ? c.father === f : !c.father) && (m ? c.mother === m : !c.mother) && (f || m))
+    .sort((a, b) => birthKey(a).localeCompare(birthKey(b)));
+  const unionOf = (f, m) => unions.find(u => u.husband === f && u.wife === m);
 
+  // ----- person view -----
   // Every known person ends with both parents: a real one, or a dashed "unknown" box.
-  function buildHierarchy(id) {
+  function buildPersons(id) {
     const p = people.get(id);
-    const node = { id, p, children: [], sibs: siblingsOf(id).map(o => o.id) };
-    if (p.father && people.has(p.father)) node.children.push(buildHierarchy(p.father));
+    const node = { id, p, children: [] };
+    if (p.father && people.has(p.father)) node.children.push(buildPersons(p.father));
     else node.children.push({ id: `ghost-f-${id}`, ghost: "père" });
-    if (p.mother && people.has(p.mother)) node.children.push(buildHierarchy(p.mother));
+    if (p.mother && people.has(p.mother)) node.children.push(buildPersons(p.mother));
     else node.children.push({ id: `ghost-m-${id}`, ghost: "mère" });
     return node;
   }
-  // Starting point: the sibling group in settings.start, who share the same parents.
-  function buildStart() {
+  function buildPersonRoot() {
     const ids = START.filter(id => people.has(id));
-    const first = people.get(ids[0]);
-    const tmp = buildHierarchy(first.id);
-    return { id: ROOT_ID, siblings: ids, children: tmp.children };
+    return { id: ROOT_ID, siblings: ids, children: buildPersons(ids[0]).children };
   }
+
+  // ----- family view -----
+  // A family = the couple (father, mother) and all their children. `line` is the child who
+  // continues the direct line (highlighted). Its parents' families come next, father first.
+  function buildFamily(fId, mId, line) {
+    const fam = { id: `fam:${fId || "?"}:${mId || "?"}`, fam: true, f: fId, m: mId, line,
+      kids: childrenOfCouple(fId, mId).map(c => c.id), children: [] };
+    [fId, mId].forEach(pid => {
+      const p = pid && people.get(pid);
+      if (!p) return;
+      if (p.father || p.mother) fam.children.push(buildFamily(p.father, p.mother, pid));
+      else fam.children.push({ id: `ghost-fam-${pid}`, ghost: "parents", of: pid });
+    });
+    return fam;
+  }
+  function buildFamilyRoot() {
+    const first = people.get(START[0]);
+    const root = buildFamily(first.father, first.mother, null);
+    root.id = ROOT_ID; root.start = true;
+    return root;
+  }
+
+  // ----- sizes -----
+  const famH = data => (data.fam ? FAM_HEAD + Math.max(1, data.kids.length) * FAM_LINE + FAM_PAD : NODE_H);
   const rootH = () => SIB_HEAD + START.length * SIB_LINE + 8;
-  const sibBoxH = data => (showSiblings && data.sibs && data.sibs.length ? SX_GAP + SX_HEAD + data.sibs.length * SX_LINE + SX_PAD : 0);
-  // Height of a whole block (card + optional sibling box); the card sits at the top of the block.
-  const blockH = data => (data.id === ROOT_ID ? rootH() : NODE_H + sibBoxH(data));
+  const blockH = data => (familyMode ? famH(data) : data.id === ROOT_ID ? rootH() : NODE_H);
   const nodeH = d => blockH(d.data);
-  // Vertical centre of the card itself, where links attach.
-  const anchorY = d => (d.data.id === ROOT_ID ? d.x : d.x - nodeH(d) / 2 + NODE_H / 2);
-  function treeHas(id) { return layout && layout.descendants().some(d => d.data.id === id || (d.data.siblings || []).includes(id)); }
+  const curW = () => (familyMode ? FAM_W : NODE_W);
+  const curCol = () => (familyMode ? FAM_COL : COL);
+
+  function findNode(id) {
+    const all = layout.descendants();
+    if (familyMode) {
+      return all.find(n => n.data.fam && (n.data.f === id || n.data.m === id))
+        || all.find(n => n.data.fam && n.data.kids.includes(id));
+    }
+    return all.find(n => n.data.id === id || (n.data.siblings || []).includes(id));
+  }
+  function treeHas(id) { return !!(layout && findNode(id)); }
   function buildTree() {
-    const flex = d3.flextree({ nodeSize: n => [blockH(n.data) + GAP, COL], spacing: (a, b) => (a.parent === b.parent ? 0 : 8) });
-    layout = flex(flex.hierarchy(buildStart()));
-    drawTree();
+    const data = familyMode ? buildFamilyRoot() : buildPersonRoot();
+    const flex = d3.flextree({ nodeSize: n => [blockH(n.data) + GAP, curCol()], spacing: (a, b) => (a.parent === b.parent ? 0 : 8) });
+    layout = flex(flex.hierarchy(data));
+    gLinks.selectAll("*").remove(); gNodes.selectAll("*").remove(); gAxis.selectAll("*").remove();
+    familyMode ? drawFamilies() : drawPersons();
+    drawLinks();
   }
   function trimText(t, max) { return t.length > max ? t.slice(0, max - 1) + "…" : t; }
-  function drawTree() {
-    const nodes = layout.descendants(), links = layout.links();
-    gLinks.selectAll("path").data(links, d => d.target.data.id).join("path")
-      .attr("class", "link")
+  function drawLinks() {
+    const W = curW();
+    gLinks.selectAll("path").data(layout.links()).join("path").attr("class", "link")
       .attr("d", d => {
-        const sx = d.source.y + NODE_W, sy = anchorY(d.source), tx = d.target.y, ty = anchorY(d.target), mx = (sx + tx) / 2;
+        const sx = d.source.y + W, sy = d.source.x, tx = d.target.y, ty = d.target.x, mx = (sx + tx) / 2;
         return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
       });
+  }
+  function ghostCard(g, title, sub) {
+    g.attr("class", "node ghost unknown");
+    const W = curW();
+    g.append("rect").attr("class", "box").attr("rx", 8).attr("width", W).attr("height", NODE_H).attr("y", -NODE_H / 2);
+    g.append("rect").attr("class", "stripe").attr("width", 4).attr("height", NODE_H - 12).attr("y", -NODE_H / 2 + 6).attr("rx", 2);
+    g.append("text").attr("class", "n1").attr("x", 14).attr("y", -4).text(title);
+    g.append("text").attr("class", "n2").attr("x", 14).attr("y", 14).text(sub);
+  }
 
-    const people_ = nodes.filter(d => d.data.id !== ROOT_ID);
-    const sel = gNodes.selectAll("g.node").data(people_, d => d.data.id).join(enter => {
-      const g = enter.append("g");
+  function drawPersons() {
+    const nodes = layout.descendants();
+    nodes.forEach(d => {
+      const g = gNodes.append("g").attr("transform", `translate(${d.y},${d.x})`);
+      if (d.data.id === ROOT_ID) return drawStart(g, d);
+      if (d.data.ghost) return ghostCard(g, d.data.ghost === "père" ? "Père inconnu" : "Mère inconnue", "à rechercher");
+      const p = d.data.p;
+      g.attr("class", `node ${p.status || "unknown"}`).attr("tabindex", 0).attr("role", "button").attr("data-person", p.id);
       g.append("rect").attr("class", "box").attr("rx", 8).attr("width", NODE_W).attr("height", NODE_H).attr("y", -NODE_H / 2);
-      g.append("rect").attr("class", "stripe").attr("width", 4).attr("height", NODE_H - 12).attr("x", 0).attr("y", -NODE_H / 2 + 6).attr("rx", 2);
-      g.append("text").attr("class", "n1").attr("x", 14).attr("y", -4);
-      g.append("text").attr("class", "n2").attr("x", 14).attr("y", 14);
-      g.append("text").attr("class", "sosa").attr("x", NODE_W - 8).attr("y", -NODE_H / 2 + 13).attr("text-anchor", "end");
-      g.append("title");
-      return g;
-    });
-    sel.attr("class", d => (d.data.ghost ? "node ghost unknown" : `node ${d.data.p.status || "unknown"}`))
-      .attr("transform", d => `translate(${d.y},${anchorY(d)})`)
-      .attr("tabindex", d => (d.data.ghost ? null : 0))
-      .attr("role", d => (d.data.ghost ? null : "button"));
-    sel.select(".n1").text(d => (d.data.ghost ? (d.data.ghost === "père" ? "Père inconnu" : "Mère inconnue") : trimText(fullName(d.data.p), 27)));
-    sel.select(".n2").text(d => {
-      if (d.data.ghost) return "à rechercher";
-      const p = d.data.p, ls = lifespan(p);
+      g.append("rect").attr("class", "stripe").attr("width", 4).attr("height", NODE_H - 12).attr("y", -NODE_H / 2 + 6).attr("rx", 2);
+      g.append("text").attr("class", "n1").attr("x", 14).attr("y", -4).text(trimText(fullName(p), 27));
       const pl = hidden(p) ? "" : placeName((p.birth && p.birth.place) || (p.death && p.death.place));
-      return trimText([ls, pl].filter(Boolean).join(" · "), 32);
+      g.append("text").attr("class", "n2").attr("x", 14).attr("y", 14).text(trimText([lifespan(p), pl].filter(Boolean).join(" · "), 32));
+      if (sosa.has(p.id)) g.append("text").attr("class", "sosa").attr("x", NODE_W - 8).attr("y", -NODE_H / 2 + 13).attr("text-anchor", "end").text(sosa.get(p.id));
+      g.append("title").text(fullName(p));
     });
-    sel.select(".sosa").text(d => (!d.data.ghost && sosa.has(d.data.id) ? sosa.get(d.data.id) : ""));
-    sel.select("title").text(d => (d.data.ghost ? "" : fullName(d.data.p)));
-    // sibling box, drawn below the card
-    sel.each(function (d) {
-      const ids = !d.data.ghost && showSiblings ? d.data.sibs || [] : [];
-      const box = d3.select(this).selectAll("g.sibx").data(ids.length ? [ids] : []).join("g").attr("class", "sibx")
-        .attr("transform", `translate(0,${NODE_H / 2 + SX_GAP})`);
-      box.selectAll("line.sibx-tie").data([0]).join("line").attr("class", "sibx-tie")
-        .attr("x1", 18).attr("x2", 18).attr("y1", -SX_GAP).attr("y2", 0);
-      box.selectAll("rect.sibx-box").data([0]).join("rect").attr("class", "sibx-box").attr("rx", 7)
-        .attr("x", 8).attr("width", NODE_W - 8).attr("height", ids.length * SX_LINE + SX_HEAD + SX_PAD - 2);
-      box.selectAll("text.sibx-title").data([0]).join("text").attr("class", "sibx-title").attr("x", 18).attr("y", 14)
-        .text(ids.length > 1 ? "Frères et sœurs" : (people.get(ids[0]) || {}).sex === "F" ? "Sœur" : "Frère");
-      const rows = box.selectAll("g.sibx-row").data(ids, id => id).join(enter => {
-        const r = enter.append("g").attr("class", "sibx-row").attr("tabindex", 0).attr("role", "button");
-        r.append("rect").attr("class", "sibx-hit").attr("x", 12).attr("width", NODE_W - 16).attr("height", SX_LINE - 2).attr("rx", 4);
-        r.append("text").attr("class", "sibx-name").attr("x", 18).attr("y", 13);
-        r.append("text").attr("class", "sibx-year").attr("x", NODE_W - 8).attr("y", 13).attr("text-anchor", "end");
-        return r;
-      });
-      rows.attr("transform", (id, i) => `translate(0,${SX_HEAD + i * SX_LINE - 4})`)
-        .attr("data-person", id => id).attr("aria-label", id => fullName(people.get(id)));
-      rows.select(".sibx-name").text(id => trimText(fullName(people.get(id)), 26));
-      rows.select(".sibx-year").text(id => (hidden(people.get(id)) ? "" : year(people.get(id).birth) || ""));
-      rows.on("keydown", (ev, id) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openPerson(id); } });
-    });
-    sel.on("click", (ev, d) => { if (!d.data.ghost && !ev.target.closest(".sibx-row")) openPerson(d.data.id); })
-      .on("keydown", (ev, d) => { if ((ev.key === "Enter" || ev.key === " ") && !d.data.ghost) { ev.preventDefault(); openPerson(d.data.id); } });
-
-    // starting card: the siblings, one clickable line each
-    const root = nodes.find(d => d.data.id === ROOT_ID);
-    const H = rootH();
-    const g = gNodes.selectAll("g.start").data([root]).join("g").attr("class", "start")
-      .attr("transform", d => `translate(${d.y},${d.x})`);
-    g.selectAll("rect.start-box").data([0]).join("rect").attr("class", "start-box").attr("rx", 10)
-      .attr("width", NODE_W).attr("height", H).attr("y", -H / 2);
-    g.selectAll("text.start-title").data([0]).join("text").attr("class", "start-title")
-      .attr("x", 14).attr("y", -H / 2 + 21).text(START.length > 1 ? "Les enfants" : "Point de départ");
-    const lines = g.selectAll("g.sib").data(root.data.siblings, id => id).join(enter => {
-      const l = enter.append("g").attr("class", "sib").attr("tabindex", 0).attr("role", "button");
-      l.append("rect").attr("class", "sib-hit").attr("x", 6).attr("width", NODE_W - 12).attr("height", SIB_LINE - 2).attr("rx", 5);
-      l.append("text").attr("class", "sib-name").attr("x", 14).attr("y", 15);
-      l.append("text").attr("class", "sib-year").attr("x", NODE_W - 12).attr("y", 15).attr("text-anchor", "end");
-      return l;
-    });
-    lines.attr("transform", (id, i) => `translate(0,${-H / 2 + SIB_HEAD + i * SIB_LINE})`)
-      .attr("data-person", id => id).attr("aria-label", id => fullName(people.get(id)));
-    lines.select(".sib-name").text(id => trimText(fullName(people.get(id)), 24));
-    lines.select(".sib-year").text(id => (hidden(people.get(id)) ? "" : year(people.get(id).birth) || ""));
-    lines.on("keydown", (ev, id) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openPerson(id); } });
-
     // generation labels
     const maxDepth = d3.max(nodes, d => d.depth);
     const minX = d3.min(nodes, d => d.x - nodeH(d) / 2);
-    d3.selectAll(".sibx-row").classed("selected", id => panel.hidden ? false : id === currentPanelId);
-    gRoot.selectAll("g.gen-axis").data([0]).join("g").attr("class", "gen-axis")
-      .selectAll("text").data(d3.range(maxDepth + 1)).join("text")
-      .attr("x", d => d * COL + 10).attr("y", minX - 18)
-      .text(d => (d === 0 ? "Génération 1" : `${d + 1}`));
+    gAxis.selectAll("text").data(d3.range(maxDepth + 1)).join("text")
+      .attr("x", d => d * COL + 10).attr("y", minX - 18).text(d => (d === 0 ? "Génération 1" : `${d + 1}`));
   }
+  function drawStart(g, d) {
+    const H = rootH();
+    g.attr("class", "start");
+    g.append("rect").attr("class", "start-box").attr("rx", 10).attr("width", NODE_W).attr("height", H).attr("y", -H / 2);
+    g.append("text").attr("class", "start-title").attr("x", 14).attr("y", -H / 2 + 21).text(START.length > 1 ? "Les enfants" : "Point de départ");
+    d.data.siblings.forEach((id, i) => {
+      const p = people.get(id);
+      const l = g.append("g").attr("class", "sib").attr("tabindex", 0).attr("role", "button").attr("data-person", id)
+        .attr("aria-label", fullName(p)).attr("transform", `translate(0,${-H / 2 + SIB_HEAD + i * SIB_LINE})`);
+      l.append("rect").attr("class", "sib-hit").attr("x", 6).attr("width", NODE_W - 12).attr("height", SIB_LINE - 2).attr("rx", 5);
+      l.append("text").attr("class", "sib-name").attr("x", 14).attr("y", 15).text(trimText(fullName(p), 24));
+      l.append("text").attr("class", "sib-year").attr("x", NODE_W - 12).attr("y", 15).attr("text-anchor", "end").text(hidden(p) ? "" : year(p.birth) || "");
+    });
+  }
+
+  function drawFamilies() {
+    layout.descendants().forEach(d => {
+      const g = gNodes.append("g").attr("transform", `translate(${d.y},${d.x})`);
+      if (d.data.ghost) return ghostCard(g, `Parents de ${trimText(firstGiven(people.get(d.data.of)) + " " + surname(people.get(d.data.of)), 20)}`, "à rechercher");
+      const { f, m, kids, line } = d.data;
+      const fa = people.get(f), mo = people.get(m);
+      const H = famH(d.data), W = FAM_W, top = -H / 2;
+      g.attr("class", `fam${d.data.start ? " start-fam" : ""}`);
+      g.append("rect").attr("class", "fam-box").attr("rx", 10).attr("width", W).attr("height", H).attr("y", top);
+      // title: "Famille Benoît & Agnese", each first name opens that parent's card
+      const t = g.append("text").attr("class", "fam-title").attr("x", 12).attr("y", top + 20);
+      t.append("tspan").text("Famille ");
+      const name = (p, fallback) => t.append("tspan").attr("class", p ? "fam-parent" : "fam-unknown")
+        .attr("data-person", p ? p.id : null).text(p ? firstGiven(p) : fallback);
+      name(fa, "?"); t.append("tspan").text(" & "); name(mo, "?");
+      const u = unionOf(f, m);
+      const sub = [[fa && surname(fa), mo && surname(mo)].filter(Boolean).join(" – "),
+        u && u.date && !(hidden(fa || {}) || hidden(mo || {})) ? `× ${u.date.slice(0, 4)}` : ""].filter(Boolean).join("  ·  ");
+      g.append("text").attr("class", "fam-sub").attr("x", 12).attr("y", top + 36).text(trimText(sub, 34));
+      const n = [f, m].map(id => sosa.get(id)).filter(Boolean);
+      if (n.length) g.append("text").attr("class", "sosa").attr("x", W - 10).attr("y", top + 36).attr("text-anchor", "end").text(n.join(" · "));
+      if (!kids.length) {
+        g.append("text").attr("class", "fam-kid other").attr("x", 14).attr("y", top + FAM_HEAD + 14).text("Enfants non renseignés");
+      }
+      kids.forEach((id, i) => {
+        const p = people.get(id);
+        const onLine = id === line || (d.data.start && START.includes(id));
+        const r = g.append("g").attr("class", `fam-row${onLine ? " line" : ""} ${p.status || ""}`).attr("tabindex", 0).attr("role", "button")
+          .attr("data-person", id).attr("aria-label", fullName(p)).attr("transform", `translate(0,${top + FAM_HEAD + i * FAM_LINE})`);
+        r.append("rect").attr("class", "fam-hit").attr("x", 6).attr("width", W - 12).attr("height", FAM_LINE - 2).attr("rx", 5);
+        if (onLine && !d.data.start) r.append("rect").attr("class", "fam-mark").attr("x", 8).attr("y", 4).attr("width", 3).attr("height", FAM_LINE - 10).attr("rx", 1.5);
+        r.append("text").attr("class", `fam-kid ${onLine ? "on" : "other"}`).attr("x", 16).attr("y", 14).text(trimText(fullName(p), 28));
+        r.append("text").attr("class", "fam-year").attr("x", W - 10).attr("y", 14).attr("text-anchor", "end").text(hidden(p) ? "" : year(p.birth) || "");
+      });
+    });
+  }
+
+  // keyboard: Enter/Space on any focusable card or row opens the person
+  svg.on("keydown", ev => {
+    const t = ev.target.closest && ev.target.closest("[data-person]");
+    if (t && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openPerson(t.getAttribute("data-person")); }
+  });
+
   function bounds() {
-    const n = layout.descendants();
-    return { x0: d3.min(n, d => d.y) - 20, x1: d3.max(n, d => d.y) + NODE_W + 20, y0: d3.min(n, d => d.x - nodeH(d) / 2) - 40, y1: d3.max(n, d => d.x + nodeH(d) / 2) + 20 };
+    const n = layout.descendants(), W = curW();
+    return { x0: d3.min(n, d => d.y) - 20, x1: d3.max(n, d => d.y) + W + 20, y0: d3.min(n, d => d.x - nodeH(d) / 2) - 40, y1: d3.max(n, d => d.x + nodeH(d) / 2) + 20 };
   }
   function fit(animate) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
@@ -370,12 +417,11 @@ function run(data) {
   }
   function centerOn(id, select) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight;
-    const d = layout.descendants().find(n => n.data.id === id || (n.data.siblings || []).includes(id))
-      || layout.descendants().find(n => showSiblings && (n.data.sibs || []).includes(id));
+    const d = id === ROOT_ID ? layout : findNode(id);
     if (!d) { if (select) openPerson(id); return; }
     const k = W < 600 ? 0.85 : 1;
-    const x = d.depth === 0 ? 16 + (W < 600 ? 0 : 24) : W / 2 - (NODE_W * k) / 2;
-    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - anchorY(d) * k).scale(k));
+    const x = d.depth === 0 ? 16 + (W < 600 ? 0 : 24) : W / 2 - (curW() * k) / 2;
+    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - d.x * k).scale(k));
     if (select) openPerson(id);
   }
   function initialView() {
@@ -392,12 +438,13 @@ function run(data) {
   document.getElementById("zoom-out").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.3);
   document.getElementById("zoom-fit").onclick = () => fit(true);
   document.getElementById("zoom-root").onclick = () => centerOn(ROOT_ID, false);
-  sibToggle.addEventListener("change", () => {
-    showSiblings = sibToggle.checked;
-    try { localStorage.setItem("famille-freres", showSiblings ? "1" : "0"); } catch (e) {}
-    const t = d3.zoomTransform(svg.node());
+  modeToggle.addEventListener("change", () => {
+    familyMode = modeToggle.checked;
+    syncLegend();
+    try { localStorage.setItem("famille-vue", familyMode ? "familles" : "personnes"); } catch (e) {}
+    closePanel();
     buildTree();
-    svg.call(zoom.transform, t);
+    centerOn(ROOT_ID, false);
   });
 
   // ---------- map ----------
