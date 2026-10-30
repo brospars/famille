@@ -31,17 +31,28 @@ private/notes.json    points à vérifier
 
 Garder une sauvegarde de ce dossier hors du dépôt : sans lui, il faut repartir du fichier chiffré.
 
+### Le mot de passe en variable d'environnement
+
+Créer à la racine un fichier `.env` (exclu de Git) :
+
+```sh
+FAMILLE_MDP=le-mot-de-passe
+```
+
+`tools/encrypt.mjs` et `tools/verify.mjs` le lisent automatiquement. Sans `.env`, ils utilisent la variable
+`FAMILLE_MDP` du terminal, sinon le mot de passe est demandé.
+
 ### Mettre à jour le site
 
 ```sh
 # 1. modifier les fichiers de private/
-# 2. chiffrer (le mot de passe est demandé deux fois)
+# 2. chiffrer
 node tools/encrypt.mjs
-# 3. publier uniquement le fichier chiffré
+# 3. pousser uniquement le fichier chiffré : GitHub Actions déploie automatiquement
 git add data/vault.json && git commit -m "Mise à jour de l'arbre" && git push
 ```
 
-Changer de mot de passe : relancer `node tools/encrypt.mjs` avec le nouveau, puis pousser.
+Changer de mot de passe : modifier `.env` (et le secret GitHub), relancer `node tools/encrypt.mjs`, puis pousser.
 
 ### Format d'une personne (`private/family.json`)
 
@@ -73,11 +84,22 @@ Changer de mot de passe : relancer `node tools/encrypt.mjs` avec le nouveau, pui
 python3 -m http.server 8000   # puis http://localhost:8000
 ```
 
-## Publier sur famille.rospars.me
+## Déploiement (GitHub Actions → GitHub Pages)
 
-1. Rendre le dépôt public (ou utiliser GitHub Pro pour un dépôt privé).
-2. Settings → Pages → « Deploy from a branch », branche `main`, dossier `/ (root)`.
-3. Le fichier `CNAME` contient déjà `famille.rospars.me`.
+Le workflow `.github/workflows/deploy.yml` se lance à chaque push sur `main` (ou à la main depuis l'onglet Actions). Il :
+
+1. vérifie que `data/vault.json` se déchiffre avec le secret `FAMILLE_MDP`, s'il existe ;
+2. refuse de déployer si des données en clair (`private/`, `.env`) se trouvent dans le dépôt ;
+3. publie seulement `index.html`, `assets/`, `vendor/`, `data/vault.json` et `CNAME` (ni `tools/`, ni le README).
+
+Le mot de passe ne sert pas à chiffrer sur GitHub : le chiffrement se fait toujours en local.
+
+Réglages à faire une fois sur GitHub :
+
+1. Settings → Pages → Build and deployment → Source : **GitHub Actions**.
+   Sur un compte gratuit, Pages exige un dépôt public ; un dépôt privé demande GitHub Pro.
+2. Settings → Secrets and variables → Actions → New repository secret : `FAMILLE_MDP` (facultatif, active la vérification).
+3. Settings → Pages → Custom domain : `famille.rospars.me`.
 4. DNS de rospars.me : `famille  CNAME  brospars.github.io.`
 5. Une fois le certificat émis, cocher « Enforce HTTPS ».
 

@@ -1,0 +1,65 @@
+name: Déployer sur GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Garde-fou : refuse de déployer si data/vault.json ne se déchiffre pas
+      # avec le mot de passe enregistré dans le secret FAMILLE_MDP (étape ignorée si le secret n'existe pas).
+      - name: Vérifier le fichier chiffré
+        env:
+          FAMILLE_MDP: ${{ secrets.FAMILLE_MDP }}
+        run: |
+          if [ -z "$FAMILLE_MDP" ]; then
+            echo "Secret FAMILLE_MDP absent : vérification ignorée."
+          else
+            node tools/verify.mjs
+          fi
+
+      - name: Refuser toute donnée en clair
+        run: |
+          if [ -d private ] || git ls-files | grep -qE '^(private/|\.env$)'; then
+            echo "Des données en clair sont présentes dans le dépôt : déploiement annulé."; exit 1
+          fi
+
+      - name: Assembler le site
+        run: |
+          mkdir _site
+          cp -r index.html assets vendor CNAME .nojekyll _site/
+          mkdir _site/data && cp data/vault.json _site/data/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

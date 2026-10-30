@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Chiffre private/family.json, private/places.json et private/notes.json dans data/vault.json.
-// Usage :  node tools/encrypt.mjs            (le mot de passe est demandé)
+// Usage :  node tools/encrypt.mjs            (mot de passe lu dans FAMILLE_MDP, puis .env, sinon demandé)
 //          FAMILLE_MDP="..." node tools/encrypt.mjs
 // Algorithme : PBKDF2-SHA256 (600 000 itérations) -> clé AES-256-GCM. Node 18 ou plus récent.
 import { readFile, writeFile } from "node:fs/promises";
@@ -28,6 +28,12 @@ const payload = {
   notes: await read("notes.json").catch(() => [])
 };
 
+// .env à la racine (exclu de Git) : FAMILLE_MDP=...
+const env = await readFile(join(root, ".env"), "utf8").catch(() => "");
+for (const line of env.split(/\r?\n/)) {
+  const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+  if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
+}
 let password = process.env.FAMILLE_MDP;
 if (!password) {
   password = await ask("Mot de passe : ");
