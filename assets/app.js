@@ -112,7 +112,7 @@ function run(data) {
       .filter(o => o.id !== id && ((p.father && o.father === p.father) || (p.mother && o.mother === p.mother)))
       .sort((a, b) => ((a.birth && a.birth.date) || "9999").localeCompare((b.birth && b.birth.date) || "9999"));
   }
-  const STATUS = { doc: "Document familial ou officiel", oral: "Transmis oralement", tree: "Arbre public, à vérifier", unknown: "À rechercher" };
+  const STATUS = { doc: "Document familial ou officiel", oral: "Transmis oralement", tree: "Source publique, à vérifier", unknown: "À rechercher" };
 
   // Sosa numbers relative to the first root
   const sosa = new Map();
