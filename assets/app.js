@@ -231,7 +231,7 @@ function run(data) {
   const ROOT_ID = "__start";
   const modeToggle = document.getElementById("family-view");
   let familyMode = !!S.familyViewByDefault;
-  try { const v = localStorage.getItem("famille-vue"); if (v !== null) familyMode = v === "familles"; } catch (e) {}
+  try { const v = localStorage.getItem("famille-vue-2"); if (v !== null) familyMode = v === "familles"; } catch (e) {}
   modeToggle.checked = familyMode;
   const famLegend = document.querySelector(".fam-legend");
   const syncLegend = () => { famLegend.hidden = !familyMode; };
@@ -441,7 +441,7 @@ function run(data) {
   modeToggle.addEventListener("change", () => {
     familyMode = modeToggle.checked;
     syncLegend();
-    try { localStorage.setItem("famille-vue", familyMode ? "familles" : "personnes"); } catch (e) {}
+    try { localStorage.setItem("famille-vue-2", familyMode ? "familles" : "personnes"); } catch (e) {}
     closePanel();
     buildTree();
     centerOn(ROOT_ID, false);
