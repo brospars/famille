@@ -47,8 +47,9 @@ function run(data) {
     if (!d || !d.date) return "";
     const [y, m, day] = d.date.split("-");
     let s = y;
-    if (m && day) s = `${+day} ${MONTHS[+m - 1]} ${y}`;
+    if (m && day) s = `${+day === 1 ? "1er" : +day} ${MONTHS[+m - 1]} ${y}`;
     else if (m) s = `${MONTHS[+m - 1]} ${y}`;
+    if (d.time) { const [h, mi] = d.time.split(":"); s += ` à ${+h} h ${mi}`; }
     return d.original ? `${d.original} (${s})` : s;
   }
   const placeName = id => (id && places[id] ? places[id].name : "");
@@ -145,7 +146,7 @@ function run(data) {
       dl += eventRow("Naissance", p.birth);
       us.forEach(u => {
         const other = people.get(u.husband === id ? u.wife : u.husband);
-        if (u.date || u.place) dl += eventRow("Mariage", u).replace("</dd>", other ? ` avec ${esc(fullName(other))}</dd>` : "</dd>");
+        if (u.date || u.place) dl += eventRow("Mariage", u).replace("</dd>", (other ? ` avec ${esc(fullName(other))}` : "") + (u.notes ? `<br><small>${esc(u.notes)}</small>` : "") + "</dd>");
       });
       dl += eventRow("Décès", p.death);
     }
