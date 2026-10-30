@@ -21,7 +21,8 @@ window.Vault = (function () {
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(vault.iv) }, key, fromB64(vault.data));
     return JSON.parse(new TextDecoder().decode(plain));
   }
-  // The stored key is tied to the vault's salt: a re-encrypted vault invalidates it.
+  // The stored key is tied to the vault's salt. Re-encrypting with the same password keeps
+  // the salt, so the key still works; a new password makes decryption fail and the key is dropped.
   function readStored(vault) {
     for (const s of [sessionStorage, localStorage]) {
       try {

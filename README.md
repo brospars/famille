@@ -15,7 +15,7 @@ Le site le déchiffre dans le navigateur une fois le mot de passe saisi.
 - Clé dérivée du mot de passe par PBKDF2-SHA256 (600 000 itérations, sel aléatoire), chiffrement AES-256-GCM.
 - Même algorithme côté navigateur (`assets/vault.js`, Web Crypto) et côté script (`tools/encrypt.mjs`, Node 18+).
 - « Se souvenir sur cet appareil » garde la clé dérivée dans le navigateur ; « Verrouiller » l'efface.
-  Changer le mot de passe invalide automatiquement les clés mémorisées.
+  Le sel est conservé d'un chiffrement à l'autre : avec le même mot de passe, les appareils mémorisés restent déverrouillés après une mise à jour. Changer le mot de passe invalide automatiquement les clés mémorisées ; `node tools/encrypt.mjs --nouveau-sel` force un nouveau sel (après une fuite, par exemple).
 - Le fichier chiffré est public : choisir un mot de passe long (16 caractères minimum, imposé par le script).
 - Un accès donné ne se retire pas : ce qui a été déchiffré a pu être copié. Changer le mot de passe protège les versions suivantes.
 

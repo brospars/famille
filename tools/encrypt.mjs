@@ -42,12 +42,18 @@ if (!password) {
 }
 if (password.length < 16) { console.error("Mot de passe trop court : 16 caractères minimum (une phrase de 4 ou 5 mots, par exemple)."); process.exit(1); }
 
-const salt = crypto.getRandomValues(new Uint8Array(16));
+// Keep the existing salt so browsers that remembered the derived key stay unlocked
+// after a data update. Same password + same salt = same key; a new random IV is
+// drawn for every encryption. Use --nouveau-sel (e.g. after a leak) to force a new one.
+const vaultPath = join(root, "data", "vault.json");
+const previous = await readFile(vaultPath, "utf8").then(JSON.parse).catch(() => null);
+const freshSalt = process.argv.includes("--nouveau-sel") || !previous || previous.iterations !== ITERATIONS;
+const salt = freshSalt ? crypto.getRandomValues(new Uint8Array(16)) : Uint8Array.from(Buffer.from(previous.salt, "base64"));
 const iv = crypto.getRandomValues(new Uint8Array(12));
 const base = await subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
 const key = await subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations: ITERATIONS }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
 const ct = await subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(payload)));
 
 const vault = { v: 1, kdf: "PBKDF2-SHA256", iterations: ITERATIONS, cipher: "AES-256-GCM", salt: b64(salt), iv: b64(iv), data: b64(ct) };
-await writeFile(join(root, "data", "vault.json"), JSON.stringify(vault) + "\n");
-console.log(`data/vault.json écrit (${payload.family.persons.length} personnes, ${Object.keys(payload.places).length} lieux).`);
+await writeFile(vaultPath, JSON.stringify(vault) + "\n");
+console.log(`data/vault.json écrit (${payload.family.persons.length} personnes, ${Object.keys(payload.places).length} lieux, ${freshSalt ? "nouveau sel" : "sel conservé"}).`);
