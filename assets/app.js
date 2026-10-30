@@ -83,7 +83,18 @@ function run(data) {
     const p = people.get(id);
     number(p.father, 2 * n);
     number(p.mother, 2 * n + 1);
-  })(S.roots && S.roots[0], 1);
+  })(null, 0);
+  const START = S.start || (S.roots ? [S.roots[0]] : []);
+  (function numberFrom(ids) {
+    ids.forEach(id => sosa.set(id, 1));
+    const first = people.get(ids[0]); if (!first) return;
+    const walk = (id, n) => {
+      if (!id || !people.has(id) || sosa.has(id)) return;
+      sosa.set(id, n);
+      walk(people.get(id).father, 2 * n); walk(people.get(id).mother, 2 * n + 1);
+    };
+    walk(first.father, 2); walk(first.mother, 3);
+  })(START);
   const genOf = id => (sosa.has(id) ? Math.floor(Math.log2(sosa.get(id))) + 1 : null);
 
   // ---------- header ----------
@@ -111,7 +122,7 @@ function run(data) {
   const panelBody = document.getElementById("panel-body");
   document.getElementById("panel-close").addEventListener("click", closePanel);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closePanel(); });
-  function closePanel() { panel.hidden = true; d3.selectAll(".node").classed("selected", false); }
+  function closePanel() { panel.hidden = true; d3.selectAll(".node,.sib").classed("selected", false); }
 
   function eventRow(label, d) {
     if (!d || (!d.date && !d.place)) return "";
@@ -150,13 +161,14 @@ function run(data) {
       <div class="actions"><button type="button" class="btn" data-center="${esc(id)}">Voir dans l'arbre</button></div>`;
     panel.hidden = false;
     d3.selectAll(".node").classed("selected", d => d && d.data.id === id);
+    d3.selectAll(".sib").classed("selected", s => s === id);
   }
   document.addEventListener("click", e => {
     const t = e.target.closest("[data-person],[data-place],[data-center]");
     if (!t) return;
     if (t.dataset.person) openPerson(t.dataset.person);
     else if (t.dataset.place) { location.hash = "carte"; setTimeout(() => focusPlace(t.dataset.place), 60); }
-    else if (t.dataset.center) { const id = t.dataset.center; if (!treeHas(id)) setRoot(S.roots[0]); location.hash = "arbre"; setTimeout(() => centerOn(id, true), 60); }
+    else if (t.dataset.center) { const id = t.dataset.center; location.hash = "arbre"; setTimeout(() => centerOn(id, true), 60); }
   });
 
   // ---------- tree ----------
@@ -165,29 +177,34 @@ function run(data) {
   const gLinks = gRoot.append("g");
   const gNodes = gRoot.append("g");
   const NODE_W = 210, NODE_H = 54, COL = 260, ROW = 66;
+  const SIB_HEAD = 30, SIB_LINE = 24;
   const zoom = d3.zoom().scaleExtent([0.15, 2.5]).on("zoom", ev => gRoot.attr("transform", ev.transform));
   svg.call(zoom).on("dblclick.zoom", null);
-  let rootData, layout, currentRoot;
+  const ROOT_ID = "__start";
+  let layout;
 
-  function buildHierarchy(id, depth = 0) {
+  // Every known person ends with both parents: a real one, or a dashed "unknown" box.
+  function buildHierarchy(id) {
     const p = people.get(id);
     const node = { id, p, children: [] };
-    if (!p) return node;
-    const f = p.father, m = p.mother;
-    const showGhosts = depth < 3 || f || m;
-    if (f && people.has(f)) node.children.push(buildHierarchy(f, depth + 1));
-    else if (showGhosts) node.children.push({ id: `ghost-f-${id}`, ghost: "père", children: [] });
-    if (m && people.has(m)) node.children.push(buildHierarchy(m, depth + 1));
-    else if (showGhosts) node.children.push({ id: `ghost-m-${id}`, ghost: "mère", children: [] });
-    if (!node.children.length) delete node.children;
+    if (p.father && people.has(p.father)) node.children.push(buildHierarchy(p.father));
+    else node.children.push({ id: `ghost-f-${id}`, ghost: "père" });
+    if (p.mother && people.has(p.mother)) node.children.push(buildHierarchy(p.mother));
+    else node.children.push({ id: `ghost-m-${id}`, ghost: "mère" });
     return node;
   }
-  function treeHas(id) { return layout && layout.descendants().some(d => d.data.id === id); }
-  function setRoot(id) {
-    currentRoot = id;
-    document.getElementById("root-select").value = id;
-    rootData = buildHierarchy(id);
-    const h = d3.hierarchy(rootData);
+  // Starting point: the sibling group in settings.start, who share the same parents.
+  function buildStart() {
+    const ids = START.filter(id => people.has(id));
+    const first = people.get(ids[0]);
+    const tmp = buildHierarchy(first.id);
+    return { id: ROOT_ID, siblings: ids, children: tmp.children };
+  }
+  const rootH = () => SIB_HEAD + START.length * SIB_LINE + 8;
+  const nodeH = d => (d.data.id === ROOT_ID ? rootH() : NODE_H);
+  function treeHas(id) { return layout && layout.descendants().some(d => d.data.id === id || (d.data.siblings || []).includes(id)); }
+  function buildTree() {
+    const h = d3.hierarchy(buildStart());
     layout = d3.tree().nodeSize([ROW, COL]).separation((a, b) => (a.parent === b.parent ? 1 : 1.15))(h);
     drawTree();
   }
@@ -200,7 +217,9 @@ function run(data) {
         const sx = d.source.y + NODE_W, sy = d.source.x, tx = d.target.y, ty = d.target.x, mx = (sx + tx) / 2;
         return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
       });
-    const sel = gNodes.selectAll("g.node").data(nodes, d => d.data.id).join(enter => {
+
+    const people_ = nodes.filter(d => d.data.id !== ROOT_ID);
+    const sel = gNodes.selectAll("g.node").data(people_, d => d.data.id).join(enter => {
       const g = enter.append("g");
       g.append("rect").attr("class", "box").attr("rx", 8).attr("width", NODE_W).attr("height", NODE_H).attr("y", -NODE_H / 2);
       g.append("rect").attr("class", "stripe").attr("width", 4).attr("height", NODE_H - 12).attr("x", 0).attr("y", -NODE_H / 2 + 6).attr("rx", 2);
@@ -210,36 +229,55 @@ function run(data) {
       g.append("title");
       return g;
     });
-    sel.attr("class", d => {
-      if (d.data.ghost) return "node ghost unknown";
-      return `node ${d.data.p.status || "unknown"}${d.depth === 0 ? " root" : ""}`;
-    })
+    sel.attr("class", d => (d.data.ghost ? "node ghost unknown" : `node ${d.data.p.status || "unknown"}`))
       .attr("transform", d => `translate(${d.y},${d.x})`)
       .attr("tabindex", d => (d.data.ghost ? null : 0))
       .attr("role", d => (d.data.ghost ? null : "button"));
-    sel.select(".n1").text(d => d.data.ghost ? `${d.data.ghost === "père" ? "Père" : "Mère"} inconnu${d.data.ghost === "mère" ? "e" : ""}` : trimText(fullName(d.data.p), 27));
+    sel.select(".n1").text(d => (d.data.ghost ? (d.data.ghost === "père" ? "Père inconnu" : "Mère inconnue") : trimText(fullName(d.data.p), 27)));
     sel.select(".n2").text(d => {
       if (d.data.ghost) return "à rechercher";
       const p = d.data.p, ls = lifespan(p);
       const pl = hidden(p) ? "" : placeName((p.birth && p.birth.place) || (p.death && p.death.place));
       return trimText([ls, pl].filter(Boolean).join(" · "), 32);
     });
-    sel.select(".sosa").text(d => (!d.data.ghost && sosa.has(d.data.id) && currentRoot === S.roots[0] ? sosa.get(d.data.id) : ""));
+    sel.select(".sosa").text(d => (!d.data.ghost && sosa.has(d.data.id) ? sosa.get(d.data.id) : ""));
     sel.select("title").text(d => (d.data.ghost ? "" : fullName(d.data.p)));
     sel.on("click", (ev, d) => { if (!d.data.ghost) openPerson(d.data.id); })
       .on("keydown", (ev, d) => { if ((ev.key === "Enter" || ev.key === " ") && !d.data.ghost) { ev.preventDefault(); openPerson(d.data.id); } });
 
+    // starting card: the siblings, one clickable line each
+    const root = nodes.find(d => d.data.id === ROOT_ID);
+    const H = rootH();
+    const g = gNodes.selectAll("g.start").data([root]).join("g").attr("class", "start")
+      .attr("transform", d => `translate(${d.y},${d.x})`);
+    g.selectAll("rect.start-box").data([0]).join("rect").attr("class", "start-box").attr("rx", 10)
+      .attr("width", NODE_W).attr("height", H).attr("y", -H / 2);
+    g.selectAll("text.start-title").data([0]).join("text").attr("class", "start-title")
+      .attr("x", 14).attr("y", -H / 2 + 21).text(START.length > 1 ? "Les enfants" : "Point de départ");
+    const lines = g.selectAll("g.sib").data(root.data.siblings, id => id).join(enter => {
+      const l = enter.append("g").attr("class", "sib").attr("tabindex", 0).attr("role", "button");
+      l.append("rect").attr("class", "sib-hit").attr("x", 6).attr("width", NODE_W - 12).attr("height", SIB_LINE - 2).attr("rx", 5);
+      l.append("text").attr("class", "sib-name").attr("x", 14).attr("y", 15);
+      l.append("text").attr("class", "sib-year").attr("x", NODE_W - 12).attr("y", 15).attr("text-anchor", "end");
+      return l;
+    });
+    lines.attr("transform", (id, i) => `translate(0,${-H / 2 + SIB_HEAD + i * SIB_LINE})`)
+      .attr("data-person", id => id).attr("aria-label", id => fullName(people.get(id)));
+    lines.select(".sib-name").text(id => trimText(fullName(people.get(id)), 24));
+    lines.select(".sib-year").text(id => (hidden(people.get(id)) ? "" : year(people.get(id).birth) || ""));
+    lines.on("keydown", (ev, id) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openPerson(id); } });
+
     // generation labels
     const maxDepth = d3.max(nodes, d => d.depth);
-    const minX = d3.min(nodes, d => d.x);
+    const minX = d3.min(nodes, d => d.x - nodeH(d) / 2);
     gRoot.selectAll("g.gen-axis").data([0]).join("g").attr("class", "gen-axis")
       .selectAll("text").data(d3.range(maxDepth + 1)).join("text")
-      .attr("x", d => d * COL + 10).attr("y", minX - NODE_H)
+      .attr("x", d => d * COL + 10).attr("y", minX - 18)
       .text(d => (d === 0 ? "Génération 1" : `${d + 1}`));
   }
   function bounds() {
     const n = layout.descendants();
-    return { x0: d3.min(n, d => d.y) - 20, x1: d3.max(n, d => d.y) + NODE_W + 20, y0: d3.min(n, d => d.x) - NODE_H - 30, y1: d3.max(n, d => d.x) + NODE_H };
+    return { x0: d3.min(n, d => d.y) - 20, x1: d3.max(n, d => d.y) + NODE_W + 20, y0: d3.min(n, d => d.x - nodeH(d) / 2) - 40, y1: d3.max(n, d => d.x + nodeH(d) / 2) + 20 };
   }
   function fit(animate) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
@@ -250,7 +288,7 @@ function run(data) {
   }
   function centerOn(id, select) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight;
-    const d = layout.descendants().find(n => n.data.id === id); if (!d) return;
+    const d = layout.descendants().find(n => n.data.id === id || (n.data.siblings || []).includes(id)); if (!d) return;
     const k = W < 600 ? 0.85 : 1;
     const x = d.depth === 0 ? 16 + (W < 600 ? 0 : 24) : W / 2 - (NODE_W * k) / 2;
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - d.x * k).scale(k));
@@ -260,7 +298,7 @@ function run(data) {
     const el = svg.node(); const W = el.clientWidth;
     const b = bounds();
     const k = Math.min(W / (b.x1 - b.x0), el.clientHeight / (b.y1 - b.y0));
-    if (k >= 0.45) fit(false); else centerOn(currentRoot, false);
+    if (k >= 0.45) fit(false); else centerOn(ROOT_ID, false);
   }
   let resizeTimer;
   function resizeTree() { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (layout) initialView(); }, 30); }
@@ -269,10 +307,7 @@ function run(data) {
   document.getElementById("zoom-in").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.3);
   document.getElementById("zoom-out").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.3);
   document.getElementById("zoom-fit").onclick = () => fit(true);
-  document.getElementById("zoom-root").onclick = () => centerOn(currentRoot, false);
-  const rootSel = document.getElementById("root-select");
-  rootSel.innerHTML = (S.roots || []).map(id => `<option value="${esc(id)}">${esc(fullName(people.get(id)))}</option>`).join("");
-  rootSel.onchange = () => { setRoot(rootSel.value); initialView(); };
+  document.getElementById("zoom-root").onclick = () => centerOn(ROOT_ID, false);
 
   // ---------- map ----------
   let map, placeLayer, pathLayer, markers = {};
@@ -387,7 +422,7 @@ function run(data) {
 
   // ---------- start ----------
   renderPeople();
-  setRoot(S.roots[0]);
+  buildTree();
   show(location.hash.slice(1) || "arbre");
   requestAnimationFrame(initialView);
 }

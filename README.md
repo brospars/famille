@@ -5,7 +5,7 @@ Arbre généalogique interactif et carte des lieux de vie. Site statique, sans c
 **Tout le contenu est chiffré.** Le dépôt ne contient que `data/vault.json`, illisible sans le mot de passe.
 Le site le déchiffre dans le navigateur une fois le mot de passe saisi.
 
-- **Arbre** : ascendance avec zoom et déplacement ; un clic ouvre la fiche d'une personne.
+- **Arbre** : ascendance à partir des enfants, avec zoom et déplacement ; chaque lignée se termine par une case « Père inconnu » ou « Mère inconnue » ; un clic ouvre la fiche d'une personne.
 - **Carte** : naissances, mariages et décès par lieu, trajets parent → enfant, curseur dans le temps.
 - **Personnes** : liste par nom de famille, avec recherche.
 - **Notes** : points à vérifier et sources.
@@ -76,6 +76,7 @@ Changer de mot de passe : modifier `.env` (et le secret GitHub), relancer `node 
 - Un mariage se déclare dans `unions` : `{ "husband": "…", "wife": "…", "date": "…", "place": "…" }`.
 - Un lieu (`private/places.json`) : `"id-du-lieu": { "name": "…", "dept": "…", "lat": 49.6, "lon": 0.7 }`,
   avec `"uncertain": true` pour l'afficher en pointillé.
+- `settings.start` : la fratrie de départ de l'arbre (mêmes parents), numérotée Sosa 1.
 - `settings.hideLivingDetails` masque en plus les dates et lieux des personnes vivantes, même après déverrouillage.
 
 ## Voir le site en local

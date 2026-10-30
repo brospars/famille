@@ -171,3 +171,13 @@ input[type="range"]{width:100%;accent-color:var(--accent)}
 .lock-msg{min-height:1.4em;color:#a3361f !important}
 .logout{font:inherit;font-size:13px;background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:5px 12px;cursor:pointer;margin-left:4px}
 .logout:hover{color:var(--ink);border-color:var(--ink)}
+
+/* Starting card: the sibling group */
+.start-box{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.2}
+.start-title{font-family:var(--display);font-size:17px;font-weight:600;fill:var(--ink)}
+.sib{cursor:pointer;outline:none}
+.sib-hit{fill:transparent}
+.sib:hover .sib-hit,.sib:focus-visible .sib-hit,.sib.selected .sib-hit{fill:var(--surface)}
+.sib:focus-visible .sib-hit{stroke:var(--accent);stroke-width:1.5}
+.sib-name{font-family:var(--body);font-size:13px;font-weight:600;fill:var(--ink)}
+.sib-year{font-family:var(--body);font-size:11.5px;fill:var(--muted);font-variant-numeric:tabular-nums}
