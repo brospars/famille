@@ -203,6 +203,9 @@ input[type="range"]{width:100%;accent-color:var(--accent)}
 .fam-kid.on{font-weight:600}
 .fam-kid.other{font-style:italic;fill:var(--muted)}
 .fam-mark{fill:var(--accent)}
+.fam-kid.desc{font-style:italic;fill:var(--muted);font-size:12px}
+.fam-kid.spouse{fill:var(--muted);font-size:11.5px}
+.fam-indent{fill:none;stroke:var(--line);stroke-width:1.2}
 .fam-row.doc .fam-mark{fill:var(--doc)} .fam-row.oral .fam-mark{fill:var(--oral)} .fam-row.tree .fam-mark{fill:var(--tree)}
 .fam-year{font-family:var(--body);font-size:11px;fill:var(--muted);font-variant-numeric:tabular-nums}
 .fam .sosa{font-family:var(--body);font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums}

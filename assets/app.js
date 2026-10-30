@@ -91,7 +91,7 @@ function run(data) {
     return y !== null && y > NOW - (S.livingIfBornAfterYears || 100);
   }
   const hidden = p => S.hideLivingDetails && isLiving(p);
-  const given = p => p.given || "Prénom inconnu";
+  const given = p => p.given || "Prénom à rechercher";
   const surname = p => p.surname || "";
   const fullName = p => `${given(p)}${surname(p) ? " " + surname(p) : ""}`;
   function lifespan(p) {
@@ -199,9 +199,9 @@ function run(data) {
       ${p.notes ? `<p class="note">${esc(p.notes)}</p>` : ""}
       ${p.source ? `<p class="src">Source : ${esc(p.source)}</p>` : ""}
       ${(father || mother) ? `<h3>Parents</h3><div class="rel">${relButton(father, "père")}${relButton(mother, "mère")}</div>` : ""}
-      ${us.length ? `<h3>Conjoint${us.length > 1 ? "s" : ""}</h3><div class="rel">${us.map(u => relButton(people.get(u.husband === id ? u.wife : u.husband), p.sex === "F" ? "époux" : "épouse")).join("")}</div>` : ""}
-      ${sibs.length ? `<h3>Frères et sœurs</h3><div class="rel">${sibs.map(k => relButton(k, k.sex === "F" ? "sœur" : "frère")).join("")}</div>` : ""}
-      ${kids.length ? `<h3>Enfant${kids.length > 1 ? "s" : ""}</h3><div class="rel">${kids.map(k => relButton(k, k.sex === "F" ? "fille" : "fils")).join("")}</div>` : ""}
+      ${us.length ? `<h3>Conjoint${us.length > 1 ? "s" : ""}</h3><div class="rel">${us.map(u => { const o = people.get(u.husband === id ? u.wife : u.husband); return relButton(o, o && o.sex === "F" ? "épouse" : o && o.sex === "M" ? "époux" : "conjoint"); }).join("")}</div>` : ""}
+      ${sibs.length ? `<h3>Frères et sœurs</h3><div class="rel">${sibs.map(k => relButton(k, k.sex === "F" ? "sœur" : k.sex === "M" ? "frère" : "frère ou sœur")).join("")}</div>` : ""}
+      ${kids.length ? `<h3>Enfant${kids.length > 1 ? "s" : ""}</h3><div class="rel">${kids.map(k => relButton(k, k.sex === "F" ? "fille" : k.sex === "M" ? "fils" : "enfant")).join("")}</div>` : ""}
       <div class="actions"><button type="button" class="btn" data-center="${esc(id)}">Voir dans l'arbre</button></div>`;
     panel.hidden = false;
     currentPanelId = id;
@@ -264,8 +264,9 @@ function run(data) {
   // A family = the couple (father, mother) and all their children. `line` is the child who
   // continues the direct line (highlighted). Its parents' families come next, father first.
   function buildFamily(fId, mId, line) {
+    const kids = childrenOfCouple(fId, mId).map(c => c.id);
     const fam = { id: `fam:${fId || "?"}:${mId || "?"}`, fam: true, f: fId, m: mId, line,
-      kids: childrenOfCouple(fId, mId).map(c => c.id), children: [] };
+      kids, rows: familyRows(kids, line, !line), children: [] };
     [fId, mId].forEach(pid => {
       const p = pid && people.get(pid);
       if (!p) return;
@@ -273,6 +274,25 @@ function run(data) {
       else fam.children.push({ id: `ghost-fam-${pid}`, ghost: "parents", of: pid });
     });
     return fam;
+  }
+  // Rows of a family card: each child, then for a child off the direct line, indented,
+  // each spouse ("∞ Name") followed by the children of that couple, recursively.
+  function familyRows(kids, line, isStart) {
+    const rows = [];
+    const walk = (id, depth, seen) => {
+      if (seen.has(id)) return; seen.add(id);
+      rows.push({ id, depth, kind: "kid", onLine: id === line || (isStart && START.includes(id)) });
+      if (id === line || (isStart && START.includes(id))) return;
+      unionsOf(id).forEach(u => {
+        const other = u.husband === id ? u.wife : u.husband;
+        if (other && people.has(other)) rows.push({ id: other, depth: depth + 1, kind: "spouse" });
+        const f = u.husband || null, m = u.wife || null;
+        childrenOfCouple(f, m).forEach(c => walk(c.id, depth + 1, seen));
+      });
+    };
+    const seen = new Set();
+    kids.forEach(id => walk(id, 0, seen));
+    return rows;
   }
   function buildFamilyRoot() {
     const first = people.get(START[0]);
@@ -282,7 +302,7 @@ function run(data) {
   }
 
   // ----- sizes -----
-  const famH = data => (data.fam ? FAM_HEAD + Math.max(1, data.kids.length) * FAM_LINE + FAM_PAD : NODE_H);
+  const famH = data => (data.fam ? FAM_HEAD + Math.max(1, data.rows.length) * FAM_LINE + FAM_PAD : NODE_H);
   const rootH = () => SIB_HEAD + START.length * SIB_LINE + 8;
   const blockH = data => (familyMode ? famH(data) : data.id === ROOT_ID ? rootH() : NODE_H);
   const nodeH = d => blockH(d.data);
@@ -293,7 +313,7 @@ function run(data) {
     const all = layout.descendants();
     if (familyMode) {
       return all.find(n => n.data.fam && (n.data.f === id || n.data.m === id))
-        || all.find(n => n.data.fam && n.data.kids.includes(id));
+        || all.find(n => n.data.fam && n.data.rows.some(r => r.id === id));
     }
     return all.find(n => n.data.id === id || (n.data.siblings || []).includes(id));
   }
@@ -329,7 +349,7 @@ function run(data) {
     nodes.forEach(d => {
       const g = gNodes.append("g").attr("transform", `translate(${d.y},${d.x})`);
       if (d.data.id === ROOT_ID) return drawStart(g, d);
-      if (d.data.ghost) return ghostCard(g, d.data.ghost === "père" ? "Père inconnu" : "Mère inconnue", "à rechercher");
+      if (d.data.ghost) return ghostCard(g, d.data.ghost === "père" ? "Père à rechercher" : "Mère à rechercher", "");
       const p = d.data.p;
       g.attr("class", `node ${p.status || "unknown"}`).attr("tabindex", 0).attr("role", "button").attr("data-person", p.id);
       g.append("rect").attr("class", "box").attr("rx", 8).attr("width", NODE_W).attr("height", NODE_H).attr("y", -NODE_H / 2);
@@ -382,17 +402,21 @@ function run(data) {
       g.append("text").attr("class", "fam-sub").attr("x", 12).attr("y", top + 36).text(trimText(sub, 34));
       const n = [f, m].map(id => sosa.get(id)).filter(Boolean);
       if (n.length) g.append("text").attr("class", "sosa").attr("x", W - 10).attr("y", top + 36).attr("text-anchor", "end").text(n.join(" · "));
-      if (!kids.length) {
+      const rows = d.data.rows;
+      if (!rows.length) {
         g.append("text").attr("class", "fam-kid other").attr("x", 14).attr("y", top + FAM_HEAD + 14).text("Enfants non renseignés");
       }
-      kids.forEach((id, i) => {
-        const p = people.get(id);
-        const onLine = id === line || (d.data.start && START.includes(id));
-        const r = g.append("g").attr("class", `fam-row${onLine ? " line" : ""} ${p.status || ""}`).attr("tabindex", 0).attr("role", "button")
-          .attr("data-person", id).attr("aria-label", fullName(p)).attr("transform", `translate(0,${top + FAM_HEAD + i * FAM_LINE})`);
+      rows.forEach((row, i) => {
+        const p = people.get(row.id);
+        const x0 = 16 + row.depth * 14;
+        const cls = row.kind === "spouse" ? "spouse" : row.onLine ? "on" : row.depth ? "desc" : "other";
+        const r = g.append("g").attr("class", `fam-row ${cls}${row.onLine ? " line" : ""} ${p.status || ""}`).attr("tabindex", 0).attr("role", "button")
+          .attr("data-person", row.id).attr("aria-label", fullName(p)).attr("transform", `translate(0,${top + FAM_HEAD + i * FAM_LINE})`);
         r.append("rect").attr("class", "fam-hit").attr("x", 6).attr("width", W - 12).attr("height", FAM_LINE - 2).attr("rx", 5);
-        if (onLine && !d.data.start) r.append("rect").attr("class", "fam-mark").attr("x", 8).attr("y", 4).attr("width", 3).attr("height", FAM_LINE - 10).attr("rx", 1.5);
-        r.append("text").attr("class", `fam-kid ${onLine ? "on" : "other"}`).attr("x", 16).attr("y", 14).text(trimText(fullName(p), 28));
+        if (row.onLine && !d.data.start) r.append("rect").attr("class", "fam-mark").attr("x", 8).attr("y", 4).attr("width", 3).attr("height", FAM_LINE - 10).attr("rx", 1.5);
+        if (row.depth) r.append("path").attr("class", "fam-indent").attr("d", `M${x0 - 9},2 V${FAM_LINE / 2} H${x0 - 3}`);
+        const label = (row.kind === "spouse" ? "∞ " : "") + fullName(p);
+        r.append("text").attr("class", `fam-kid ${cls}`).attr("x", x0).attr("y", 14).text(trimText(label, 30 - row.depth * 2));
         r.append("text").attr("class", "fam-year").attr("x", W - 10).attr("y", 14).attr("text-anchor", "end").text(hidden(p) ? "" : year(p.birth) || "");
       });
     });
