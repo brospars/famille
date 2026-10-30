@@ -105,6 +105,13 @@ function run(data) {
   }
   const unionsOf = id => unions.filter(u => u.husband === id || u.wife === id);
   const childrenOf = id => family.persons.filter(c => c.father === id || c.mother === id);
+  // Full or half siblings: share the father or the mother. Sorted by birth date.
+  function siblingsOf(id) {
+    const p = people.get(id); if (!p || (!p.father && !p.mother)) return [];
+    return family.persons
+      .filter(o => o.id !== id && ((p.father && o.father === p.father) || (p.mother && o.mother === p.mother)))
+      .sort((a, b) => ((a.birth && a.birth.date) || "9999").localeCompare((b.birth && b.birth.date) || "9999"));
+  }
   const STATUS = { doc: "Document familial ou officiel", oral: "Transmis oralement", tree: "Arbre public, à vérifier", unknown: "À rechercher" };
 
   // Sosa numbers relative to the first root
@@ -154,7 +161,7 @@ function run(data) {
   const panelBody = document.getElementById("panel-body");
   document.getElementById("panel-close").addEventListener("click", closePanel);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closePanel(); });
-  function closePanel() { panel.hidden = true; d3.selectAll(".node,.sib").classed("selected", false); }
+  function closePanel() { panel.hidden = true; d3.selectAll(".node,.sib,.sibx-row").classed("selected", false); currentPanelId = null; }
 
   function eventRow(label, d) {
     if (!d || (!d.date && !d.place)) return "";
@@ -166,6 +173,7 @@ function run(data) {
     if (!p) return "";
     return `<button type="button" data-person="${esc(p.id)}">${esc(fullName(p))} <small>· ${role}${lifespan(p) ? " · " + esc(lifespan(p)) : ""}</small></button>`;
   }
+  let currentPanelId = null;
   function openPerson(id) {
     const p = people.get(id); if (!p) return;
     const n = sosa.get(id);
@@ -173,6 +181,7 @@ function run(data) {
     const father = people.get(p.father), mother = people.get(p.mother);
     const us = unionsOf(id);
     const kids = childrenOf(id);
+    const sibs = siblingsOf(id);
     let dl = "";
     if (!hidden(p)) {
       dl += eventRow("Naissance", p.birth);
@@ -183,7 +192,7 @@ function run(data) {
       dl += eventRow("Décès", p.death);
     }
     panelBody.innerHTML = `
-      <p class="who">${n ? `Sosa n° ${n} · génération ${g}` : "Hors ascendance directe"}</p>
+      <p class="who">${n ? `Sosa n° ${n} · génération ${g}` : "Frère, sœur ou collatéral (hors ascendance directe)"}</p>
       <h2 id="panel-name">${esc(given(p))} ${surname(p) ? `<span class="sn">${esc(surname(p))}</span>` : ""}</h2>
       <span class="badge">${STATUS[p.status] || ""}</span>
       ${hidden(p) ? `<p class="note">Personne vivante : dates et lieux masqués.</p>` : (dl ? `<dl>${dl}</dl>` : `<p class="note">Aucune date ni aucun lieu connus pour l'instant.</p>`)}
@@ -191,9 +200,12 @@ function run(data) {
       ${p.source ? `<p class="src">Source : ${esc(p.source)}</p>` : ""}
       ${(father || mother) ? `<h3>Parents</h3><div class="rel">${relButton(father, "père")}${relButton(mother, "mère")}</div>` : ""}
       ${us.length ? `<h3>Conjoint${us.length > 1 ? "s" : ""}</h3><div class="rel">${us.map(u => relButton(people.get(u.husband === id ? u.wife : u.husband), p.sex === "F" ? "époux" : "épouse")).join("")}</div>` : ""}
+      ${sibs.length ? `<h3>Frères et sœurs</h3><div class="rel">${sibs.map(k => relButton(k, k.sex === "F" ? "sœur" : "frère")).join("")}</div>` : ""}
       ${kids.length ? `<h3>Enfant${kids.length > 1 ? "s" : ""}</h3><div class="rel">${kids.map(k => relButton(k, k.sex === "F" ? "fille" : "fils")).join("")}</div>` : ""}
       <div class="actions"><button type="button" class="btn" data-center="${esc(id)}">Voir dans l'arbre</button></div>`;
     panel.hidden = false;
+    currentPanelId = id;
+    d3.selectAll(".sibx-row").classed("selected", s => s === id);
     d3.selectAll(".node").classed("selected", d => d && d.data.id === id);
     d3.selectAll(".sib").classed("selected", s => s === id);
   }
@@ -212,6 +224,12 @@ function run(data) {
   const gNodes = gRoot.append("g");
   const NODE_W = 210, NODE_H = 54, COL = 260, ROW = 66;
   const SIB_HEAD = 30, SIB_LINE = 24;
+  // Sibling box under a card (shown with the "Frères et sœurs" switch)
+  const SX_GAP = 6, SX_HEAD = 20, SX_LINE = 20, SX_PAD = 6, GAP = 12;
+  const sibToggle = document.getElementById("show-siblings");
+  let showSiblings = !!S.showSiblingsByDefault;
+  try { const v = localStorage.getItem("famille-freres"); if (v !== null) showSiblings = v === "1"; } catch (e) {}
+  sibToggle.checked = showSiblings;
   const zoom = d3.zoom().scaleExtent([0.15, 2.5]).on("zoom", ev => gRoot.attr("transform", ev.transform));
   svg.call(zoom).on("dblclick.zoom", null);
   const ROOT_ID = "__start";
@@ -220,7 +238,7 @@ function run(data) {
   // Every known person ends with both parents: a real one, or a dashed "unknown" box.
   function buildHierarchy(id) {
     const p = people.get(id);
-    const node = { id, p, children: [] };
+    const node = { id, p, children: [], sibs: siblingsOf(id).map(o => o.id) };
     if (p.father && people.has(p.father)) node.children.push(buildHierarchy(p.father));
     else node.children.push({ id: `ghost-f-${id}`, ghost: "père" });
     if (p.mother && people.has(p.mother)) node.children.push(buildHierarchy(p.mother));
@@ -235,11 +253,16 @@ function run(data) {
     return { id: ROOT_ID, siblings: ids, children: tmp.children };
   }
   const rootH = () => SIB_HEAD + START.length * SIB_LINE + 8;
-  const nodeH = d => (d.data.id === ROOT_ID ? rootH() : NODE_H);
+  const sibBoxH = data => (showSiblings && data.sibs && data.sibs.length ? SX_GAP + SX_HEAD + data.sibs.length * SX_LINE + SX_PAD : 0);
+  // Height of a whole block (card + optional sibling box); the card sits at the top of the block.
+  const blockH = data => (data.id === ROOT_ID ? rootH() : NODE_H + sibBoxH(data));
+  const nodeH = d => blockH(d.data);
+  // Vertical centre of the card itself, where links attach.
+  const anchorY = d => (d.data.id === ROOT_ID ? d.x : d.x - nodeH(d) / 2 + NODE_H / 2);
   function treeHas(id) { return layout && layout.descendants().some(d => d.data.id === id || (d.data.siblings || []).includes(id)); }
   function buildTree() {
-    const h = d3.hierarchy(buildStart());
-    layout = d3.tree().nodeSize([ROW, COL]).separation((a, b) => (a.parent === b.parent ? 1 : 1.15))(h);
+    const flex = d3.flextree({ nodeSize: n => [blockH(n.data) + GAP, COL], spacing: (a, b) => (a.parent === b.parent ? 0 : 8) });
+    layout = flex(flex.hierarchy(buildStart()));
     drawTree();
   }
   function trimText(t, max) { return t.length > max ? t.slice(0, max - 1) + "…" : t; }
@@ -248,7 +271,7 @@ function run(data) {
     gLinks.selectAll("path").data(links, d => d.target.data.id).join("path")
       .attr("class", "link")
       .attr("d", d => {
-        const sx = d.source.y + NODE_W, sy = d.source.x, tx = d.target.y, ty = d.target.x, mx = (sx + tx) / 2;
+        const sx = d.source.y + NODE_W, sy = anchorY(d.source), tx = d.target.y, ty = anchorY(d.target), mx = (sx + tx) / 2;
         return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
       });
 
@@ -264,7 +287,7 @@ function run(data) {
       return g;
     });
     sel.attr("class", d => (d.data.ghost ? "node ghost unknown" : `node ${d.data.p.status || "unknown"}`))
-      .attr("transform", d => `translate(${d.y},${d.x})`)
+      .attr("transform", d => `translate(${d.y},${anchorY(d)})`)
       .attr("tabindex", d => (d.data.ghost ? null : 0))
       .attr("role", d => (d.data.ghost ? null : "button"));
     sel.select(".n1").text(d => (d.data.ghost ? (d.data.ghost === "père" ? "Père inconnu" : "Mère inconnue") : trimText(fullName(d.data.p), 27)));
@@ -276,7 +299,31 @@ function run(data) {
     });
     sel.select(".sosa").text(d => (!d.data.ghost && sosa.has(d.data.id) ? sosa.get(d.data.id) : ""));
     sel.select("title").text(d => (d.data.ghost ? "" : fullName(d.data.p)));
-    sel.on("click", (ev, d) => { if (!d.data.ghost) openPerson(d.data.id); })
+    // sibling box, drawn below the card
+    sel.each(function (d) {
+      const ids = !d.data.ghost && showSiblings ? d.data.sibs || [] : [];
+      const box = d3.select(this).selectAll("g.sibx").data(ids.length ? [ids] : []).join("g").attr("class", "sibx")
+        .attr("transform", `translate(0,${NODE_H / 2 + SX_GAP})`);
+      box.selectAll("line.sibx-tie").data([0]).join("line").attr("class", "sibx-tie")
+        .attr("x1", 18).attr("x2", 18).attr("y1", -SX_GAP).attr("y2", 0);
+      box.selectAll("rect.sibx-box").data([0]).join("rect").attr("class", "sibx-box").attr("rx", 7)
+        .attr("x", 8).attr("width", NODE_W - 8).attr("height", ids.length * SX_LINE + SX_HEAD + SX_PAD - 2);
+      box.selectAll("text.sibx-title").data([0]).join("text").attr("class", "sibx-title").attr("x", 18).attr("y", 14)
+        .text(ids.length > 1 ? "Frères et sœurs" : (people.get(ids[0]) || {}).sex === "F" ? "Sœur" : "Frère");
+      const rows = box.selectAll("g.sibx-row").data(ids, id => id).join(enter => {
+        const r = enter.append("g").attr("class", "sibx-row").attr("tabindex", 0).attr("role", "button");
+        r.append("rect").attr("class", "sibx-hit").attr("x", 12).attr("width", NODE_W - 16).attr("height", SX_LINE - 2).attr("rx", 4);
+        r.append("text").attr("class", "sibx-name").attr("x", 18).attr("y", 13);
+        r.append("text").attr("class", "sibx-year").attr("x", NODE_W - 8).attr("y", 13).attr("text-anchor", "end");
+        return r;
+      });
+      rows.attr("transform", (id, i) => `translate(0,${SX_HEAD + i * SX_LINE - 4})`)
+        .attr("data-person", id => id).attr("aria-label", id => fullName(people.get(id)));
+      rows.select(".sibx-name").text(id => trimText(fullName(people.get(id)), 26));
+      rows.select(".sibx-year").text(id => (hidden(people.get(id)) ? "" : year(people.get(id).birth) || ""));
+      rows.on("keydown", (ev, id) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openPerson(id); } });
+    });
+    sel.on("click", (ev, d) => { if (!d.data.ghost && !ev.target.closest(".sibx-row")) openPerson(d.data.id); })
       .on("keydown", (ev, d) => { if ((ev.key === "Enter" || ev.key === " ") && !d.data.ghost) { ev.preventDefault(); openPerson(d.data.id); } });
 
     // starting card: the siblings, one clickable line each
@@ -304,6 +351,7 @@ function run(data) {
     // generation labels
     const maxDepth = d3.max(nodes, d => d.depth);
     const minX = d3.min(nodes, d => d.x - nodeH(d) / 2);
+    d3.selectAll(".sibx-row").classed("selected", id => panel.hidden ? false : id === currentPanelId);
     gRoot.selectAll("g.gen-axis").data([0]).join("g").attr("class", "gen-axis")
       .selectAll("text").data(d3.range(maxDepth + 1)).join("text")
       .attr("x", d => d * COL + 10).attr("y", minX - 18)
@@ -322,10 +370,12 @@ function run(data) {
   }
   function centerOn(id, select) {
     const el = svg.node(), W = el.clientWidth, H = el.clientHeight;
-    const d = layout.descendants().find(n => n.data.id === id || (n.data.siblings || []).includes(id)); if (!d) return;
+    const d = layout.descendants().find(n => n.data.id === id || (n.data.siblings || []).includes(id))
+      || layout.descendants().find(n => showSiblings && (n.data.sibs || []).includes(id));
+    if (!d) { if (select) openPerson(id); return; }
     const k = W < 600 ? 0.85 : 1;
     const x = d.depth === 0 ? 16 + (W < 600 ? 0 : 24) : W / 2 - (NODE_W * k) / 2;
-    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - d.x * k).scale(k));
+    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(x - d.y * k, H / 2 - anchorY(d) * k).scale(k));
     if (select) openPerson(id);
   }
   function initialView() {
@@ -342,6 +392,13 @@ function run(data) {
   document.getElementById("zoom-out").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.3);
   document.getElementById("zoom-fit").onclick = () => fit(true);
   document.getElementById("zoom-root").onclick = () => centerOn(ROOT_ID, false);
+  sibToggle.addEventListener("change", () => {
+    showSiblings = sibToggle.checked;
+    try { localStorage.setItem("famille-freres", showSiblings ? "1" : "0"); } catch (e) {}
+    const t = d3.zoomTransform(svg.node());
+    buildTree();
+    svg.call(zoom.transform, t);
+  });
 
   // ---------- map ----------
   let map, placeLayer, pathLayer, markers = {};

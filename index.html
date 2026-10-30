@@ -59,12 +59,14 @@
         <button type="button" class="btn" id="zoom-fit">Tout voir</button>
         <button type="button" class="btn" id="zoom-root">Recentrer</button>
       </div>
+      <label class="check switch" for="show-siblings"><input type="checkbox" id="show-siblings"> Frères et sœurs</label>
     </div>
     <div class="legend">
       <span><i class="sw doc"></i>Document familial ou officiel</span>
       <span><i class="sw oral"></i>Transmis oralement</span>
       <span><i class="sw tree"></i>Arbre public, à vérifier</span>
       <span><i class="sw unknown"></i>À rechercher</span>
+      <span><i class="sw sib"></i>Frères et sœurs</span>
     </div>
     <div class="tree-wrap" id="tree-wrap"><svg id="tree" role="img" aria-label="Arbre d'ascendance"></svg></div>
   </section>
@@ -107,6 +109,7 @@
 </div>
 
 <script src="vendor/d3/d3.min.js"></script>
+<script src="vendor/d3-flextree/d3-flextree.min.js"></script>
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="assets/vault.js"></script>
 <script src="assets/app.js"></script>
