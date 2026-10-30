@@ -54,6 +54,8 @@ function run(data) {
     return d.original ? `${d.original} (${s})` : s;
   }
   const placeName = id => (id && places[id] ? places[id].name : "");
+  // "à Le Chesnay" -> "au Chesnay", "à Les Andelys" -> "aux Andelys"
+  const atPrefix = name => (/^Le /.test(name) ? ["au ", name.slice(3)] : /^Les /.test(name) ? ["aux ", name.slice(4)] : ["à ", name]);
   function isLiving(p) {
     if (p.living !== undefined) return p.living;
     if (p.death) return false;
@@ -128,7 +130,8 @@ function run(data) {
 
   function eventRow(label, d) {
     if (!d || (!d.date && !d.place)) return "";
-    const place = d.place ? ` à <button type="button" class="placelink" data-place="${esc(d.place)}">${esc(placeName(d.place))}</button>${places[d.place] && places[d.place].uncertain ? " (lieu incertain)" : ""}` : "";
+    const [pre, nm] = atPrefix(placeName(d.place));
+    const place = d.place ? ` ${pre}<button type="button" class="placelink" data-place="${esc(d.place)}">${esc(nm)}</button>${places[d.place] && places[d.place].uncertain ? " (lieu incertain)" : ""}` : "";
     return `<dt>${label}</dt><dd>${esc(fmtDate(d)) || "date inconnue"}${place}</dd>`;
   }
   function relButton(p, role) {
