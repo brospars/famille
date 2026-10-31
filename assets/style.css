@@ -214,6 +214,52 @@ input[type="range"]{width:100%;accent-color:var(--accent)}
 .node[data-person]:focus-visible rect.box{stroke:var(--accent);stroke-width:2}
 .node.selected rect.box{stroke:var(--accent);stroke-width:2}
 
-.btns.export{margin-left:auto;align-items:center}
-.export-msg{font-size:13px;color:var(--muted);margin-left:4px}
 .btn[aria-busy="true"]{opacity:.6;cursor:progress}
+
+/* Tree toolbar: one compact row; icons; export menu; legend collapsible on phones */
+.ico{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ico .fillc,.ico circle.fillc{fill:currentColor;stroke:none}
+.tree-bar{align-items:center;flex-wrap:nowrap;gap:10px;padding:10px 16px;position:relative}
+.btns.grp{flex-wrap:nowrap;gap:4px}
+.btn.icon{width:36px;height:36px;min-width:0;padding:0;display:inline-grid;place-items:center}
+.btn.icon-text{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 10px}
+.btn .caret{width:14px;height:14px;margin-left:-2px}
+.tree-bar .check{padding:0;white-space:nowrap}
+.tree-bar .short{display:none}
+.bar-end{margin-left:auto;display:flex;gap:4px;align-items:center}
+.btn.legend-toggle{display:none}
+.legend-toggle[aria-expanded="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:240px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.14);padding:6px;display:flex;flex-direction:column}
+.menu[hidden]{display:none}
+.menu button{font:inherit;text-align:left;background:none;border:0;border-radius:8px;padding:9px 12px;cursor:pointer;color:var(--ink);display:flex;flex-direction:column;gap:1px}
+.menu button:hover,.menu button:focus-visible{background:var(--accent-soft);outline:none}
+.menu b{font-size:14px;font-weight:600}
+.menu small{font-size:12px;color:var(--muted)}
+.menu button[aria-busy="true"]{opacity:.55;cursor:progress}
+.export-msg{position:absolute;right:16px;top:calc(100% + 2px);z-index:20;font-size:12.5px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 10px;pointer-events:none}
+.export-msg:empty{display:none}
+.logout{display:inline-flex;align-items:center;gap:6px}
+.logout .ico{width:15px;height:15px}
+@media (max-width:700px){
+  .tree-bar{padding:8px 10px;gap:8px}
+  .btn.icon,.btn.icon-text{height:34px}
+  .btn.icon{width:34px}
+  .tree-bar .long{display:none}
+  .tree-bar .short{display:inline}
+  .btn.icon-text{padding:0 8px}
+  .btn.legend-toggle{display:inline-grid}
+  #tree-legend{display:none;padding:2px 12px 8px;font-size:12px;gap:4px 12px}
+  #tree-legend.open{display:flex}
+  .top{flex-wrap:nowrap}
+  .tabs{flex-wrap:nowrap;gap:0}
+  .tabs a{padding:6px 9px}
+  .logout{padding:6px;border-radius:50%;margin-left:2px}
+  .logout .long{display:none}
+  .brand > div .sub{display:none}
+}
+@media (max-width:420px){
+  .top h1{font-size:18px}
+  .mark{width:30px;height:30px}
+  .tabs a{font-size:13px;padding:6px 7px}
+}

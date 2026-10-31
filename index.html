@@ -46,27 +46,33 @@
     <a href="#carte" data-view="carte">Carte</a>
     <a href="#personnes" data-view="personnes">Personnes</a>
     <a href="#notes" data-view="notes">Notes</a>
-    <button type="button" class="logout" id="logout">Verrouiller</button>
+    <button type="button" class="logout" id="logout" aria-label="Verrouiller" title="Verrouiller"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span class="long">Verrouiller</span></button>
   </nav>
 </header>
 
 <main>
   <section class="view" id="view-arbre" aria-label="Arbre">
-    <div class="toolbar">
-      <div class="btns">
-        <button type="button" class="btn" id="zoom-out" aria-label="Dézoomer">−</button>
-        <button type="button" class="btn" id="zoom-in" aria-label="Zoomer">+</button>
-        <button type="button" class="btn" id="zoom-fit">Tout voir</button>
-        <button type="button" class="btn" id="zoom-root">Recentrer</button>
+    <div class="toolbar tree-bar">
+      <div class="btns grp" role="group" aria-label="Navigation dans l'arbre">
+        <button type="button" class="btn icon" id="zoom-out" aria-label="Dézoomer" title="Dézoomer"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+        <button type="button" class="btn icon" id="zoom-in" aria-label="Zoomer" title="Zoomer"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="btn icon" id="zoom-fit" aria-label="Tout voir" title="Tout voir"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        <button type="button" class="btn icon" id="zoom-root" aria-label="Recentrer sur les enfants" title="Recentrer"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" class="fillc"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
       </div>
-      <label class="check switch" for="family-view"><input type="checkbox" id="family-view"> Vue par familles</label>
-      <div class="btns export" role="group" aria-label="Exporter l'arbre">
-        <button type="button" class="btn" id="export-png" title="Image PNG haute définition de tout l'arbre">Exporter en PNG</button>
-        <button type="button" class="btn" id="export-pdf" title="Document PDF de tout l'arbre, prêt à imprimer">PDF</button>
-        <span class="export-msg" id="export-msg" role="status" aria-live="polite"></span>
+      <label class="check switch" for="family-view"><input type="checkbox" id="family-view"> <span class="long">Vue par familles</span><span class="short">Familles</span></label>
+      <div class="bar-end">
+        <button type="button" class="btn icon legend-toggle" id="legend-toggle" aria-label="Légende" title="Légende" aria-expanded="false" aria-controls="tree-legend"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.6" r="1.2" class="fillc"/></svg></button>
+        <div class="menu-wrap">
+          <button type="button" class="btn icon-text" id="export-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu" title="Exporter l'arbre"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span class="long">Exporter</span><svg class="ico caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+          <div class="menu" id="export-menu" role="menu" hidden>
+            <button type="button" role="menuitem" id="export-png"><b>Image PNG</b><small>Haute définition, tout l'arbre</small></button>
+            <button type="button" role="menuitem" id="export-pdf"><b>Document PDF</b><small>Prêt à imprimer en poster</small></button>
+          </div>
+        </div>
       </div>
+      <span class="export-msg" id="export-msg" role="status" aria-live="polite"></span>
     </div>
-    <div class="legend">
+    <div class="legend" id="tree-legend">
       <span><i class="sw doc"></i>Document familial ou officiel</span>
       <span><i class="sw oral"></i>Transmis oralement</span>
       <span><i class="sw tree"></i>Source publique, à vérifier</span>

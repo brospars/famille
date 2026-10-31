@@ -558,16 +558,32 @@ function run(data) {
     return new Promise((ok, ko) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ko(new Error("chargement impossible")); document.head.appendChild(s); });
   }
   const exportMsg = document.getElementById("export-msg");
+  const exportToggle = document.getElementById("export-toggle"), exportMenu = document.getElementById("export-menu");
+  const setMenu = open => { exportMenu.hidden = !open; exportToggle.setAttribute("aria-expanded", String(open)); if (open) exportMenu.querySelector("button").focus(); };
+  exportToggle.addEventListener("click", ev => { ev.stopPropagation(); setMenu(exportMenu.hidden); });
+  document.addEventListener("click", ev => { if (!exportMenu.hidden && !exportMenu.contains(ev.target)) setMenu(false); });
+  exportMenu.addEventListener("keydown", ev => {
+    const items = [...exportMenu.querySelectorAll("button")], i = items.indexOf(document.activeElement);
+    if (ev.key === "Escape") { setMenu(false); exportToggle.focus(); }
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); items[(i + (ev.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus(); }
+  });
+  const legendToggle = document.getElementById("legend-toggle"), legendEl = document.getElementById("tree-legend");
+  legendToggle.addEventListener("click", () => {
+    const open = !legendEl.classList.contains("open");
+    legendEl.classList.toggle("open", open); legendToggle.setAttribute("aria-expanded", String(open));
+  });
+  let msgTimer;
+  const flash = (text, keep) => { clearTimeout(msgTimer); exportMsg.textContent = text; if (!keep) msgTimer = setTimeout(() => { exportMsg.textContent = ""; }, 6000); };
   async function runExport(btn, kind) {
     if (btn.getAttribute("aria-busy") === "true") return;
-    btn.setAttribute("aria-busy", "true"); exportMsg.textContent = "Préparation…";
+    btn.setAttribute("aria-busy", "true"); flash("Préparation de l'export…", true);
     const stamp = new Date().toISOString().slice(0, 10), base = `arbre-${(S.title || "famille").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-")}-${stamp}`;
     try {
       const { cv, w, h, scale } = await exportCanvas();
       if (kind === "png") {
         const blob = await new Promise(r => cv.toBlob(r, "image/png"));
         download(blob, base + ".png");
-        exportMsg.textContent = `PNG ${cv.width} × ${cv.height} px`;
+        flash(`PNG ${cv.width} × ${cv.height} px enregistré`);
       } else {
         if (!window.jspdf) await loadScript("vendor/jspdf/jspdf.umd.min.js");
         const { jsPDF } = window.jspdf;
@@ -576,11 +592,11 @@ function run(data) {
         pdf.setProperties({ title: S.title || "Arbre généalogique", creator: "famille.rospars.me" });
         pdf.addImage(cv.toDataURL("image/png"), "PNG", 0, 0, pw, ph, undefined, "FAST");
         pdf.save(base + ".pdf");
-        exportMsg.textContent = `PDF ${Math.round(pw / 72 * 2.54)} × ${Math.round(ph / 72 * 2.54)} cm, ${Math.round(96 * scale)} dpi`;
+        flash(`PDF ${Math.round(pw / 72 * 2.54)} × ${Math.round(ph / 72 * 2.54)} cm, ${Math.round(96 * scale)} dpi enregistré`);
       }
     } catch (e) {
-      exportMsg.textContent = "Export impossible : " + e.message;
-    } finally { btn.removeAttribute("aria-busy"); }
+      flash("Export impossible : " + e.message);
+    } finally { btn.removeAttribute("aria-busy"); setMenu(false); }
   }
   document.getElementById("export-png").onclick = ev => runExport(ev.currentTarget, "png");
   document.getElementById("export-pdf").onclick = ev => runExport(ev.currentTarget, "pdf");
