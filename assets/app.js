@@ -462,6 +462,128 @@ function run(data) {
   document.getElementById("zoom-out").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.3);
   document.getElementById("zoom-fit").onclick = () => fit(true);
   document.getElementById("zoom-root").onclick = () => centerOn(ROOT_ID, false);
+
+  // ---------- export (PNG haute définition / PDF) ----------
+  // The whole tree is redrawn off-screen as a standalone SVG: light theme forced, computed styles
+  // inlined, fonts embedded, then rasterised on a canvas at the highest scale the browser allows.
+  const EXPORT_PROPS = ["fill", "fill-opacity", "stroke", "stroke-width", "stroke-dasharray", "stroke-opacity",
+    "opacity", "font-family", "font-size", "font-weight", "font-style", "font-variant-numeric",
+    "text-anchor", "dominant-baseline", "letter-spacing", "visibility", "display"];
+  let fontCssCache = null;
+  async function embeddedFontCss() {
+    if (fontCssCache !== null) return fontCssCache;
+    fontCssCache = "";
+    try {
+      const link = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
+      if (!link) return fontCssCache;
+      let css = await (await fetch(link.href)).text();
+      const urls = [...new Set(css.match(/url\((https:[^)]+)\)/g) || [])].map(u => u.slice(4, -1));
+      for (const u of urls) {
+        const blob = await (await fetch(u)).blob();
+        const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+        css = css.split(u).join(data);
+      }
+      fontCssCache = css;
+    } catch (e) { fontCssCache = ""; }
+    return fontCssCache;
+  }
+  function exportSvg() {
+    const root = document.documentElement, prevTheme = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "light");
+    gNodes.selectAll(".selected").classed("selected", false);
+    try {
+      const b = bounds(), PAD = 40, HEAD = 96;
+      const w = Math.ceil(b.x1 - b.x0 + 2 * PAD), h = Math.ceil(b.y1 - b.y0 + 2 * PAD + HEAD);
+      const live = gRoot.node(), clone = live.cloneNode(true);
+      const a = [live, ...live.querySelectorAll("*")], c = [clone, ...clone.querySelectorAll("*")];
+      a.forEach((el, i) => {
+        const cs = getComputedStyle(el), out = c[i];
+        out.removeAttribute("class"); out.removeAttribute("tabindex"); out.removeAttribute("role");
+        out.setAttribute("style", EXPORT_PROPS.map(p => `${p}:${cs.getPropertyValue(p)}`).join(";"));
+      });
+      clone.setAttribute("transform", `translate(${PAD - b.x0},${PAD + HEAD - b.y0})`);
+      const css = getComputedStyle(root), v = k => css.getPropertyValue(k).trim();
+      const ns = "http://www.w3.org/2000/svg", doc = document.implementation.createDocument(ns, "svg", null);
+      const out = doc.documentElement;
+      out.setAttribute("xmlns", ns); out.setAttribute("width", w); out.setAttribute("height", h);
+      out.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      const el = (tag, attrs, text) => { const e = doc.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+      out.appendChild(el("rect", { width: w, height: h, fill: v("--bg") }));
+      const display = v("--display"), body = v("--body");
+      out.appendChild(el("text", { x: PAD, y: PAD + 26, style: `font-family:${display};font-size:32px;font-weight:600;fill:${v("--ink")}` },
+        `${S.title || "Arbre généalogique"}`));
+      const today = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+      out.appendChild(el("text", { x: PAD, y: PAD + 50, style: `font-family:${body};font-size:13px;fill:${v("--muted")}` },
+        `${familyMode ? "Vue par familles" : "Vue par personnes"} · ${people.size} personnes · exporté le ${today}`));
+      const legend = [["--doc", "Document familial ou officiel"], ["--oral", "Transmis oralement"], ["--tree", "Source publique, à vérifier"], ["--unknown", "À rechercher"]];
+      const mctx = document.createElement("canvas").getContext("2d"); mctx.font = `12px ${body}`;
+      let lx = PAD;
+      legend.forEach(([col, label]) => {
+        out.appendChild(el("rect", { x: lx, y: PAD + 62, width: 10, height: 10, rx: 2, fill: v(col) }));
+        const t = el("text", { x: lx + 16, y: PAD + 71, style: `font-family:${body};font-size:12px;fill:${v("--muted")}` }, label);
+        out.appendChild(t); lx += 16 + mctx.measureText(label).width + 22;
+      });
+      out.appendChild(doc.importNode(clone, true));
+      return { doc, w, h };
+    } finally {
+      if (prevTheme === null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", prevTheme);
+    }
+  }
+  async function exportCanvas() {
+    const { doc, w, h } = exportSvg();
+    const fonts = await embeddedFontCss();
+    if (fonts) { const st = doc.createElementNS("http://www.w3.org/2000/svg", "style"); st.textContent = fonts; doc.documentElement.insertBefore(st, doc.documentElement.firstChild); }
+    const xml = new XMLSerializer().serializeToString(doc);
+    const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+    try {
+      const img = new Image(); img.decoding = "sync";
+      await new Promise((ok, ko) => { img.onload = ok; img.onerror = () => ko(new Error("rendu SVG impossible")); img.src = url; });
+      // ~300 dpi when printed at the on-screen size; capped by the browser's canvas limits (iOS is the strictest)
+      const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const maxArea = ios ? 16e6 : 120e6, maxSide = ios ? 4096 * 2 : 16384;
+      const scale = Math.max(0.5, Math.min(4, Math.sqrt(maxArea / (w * h)), maxSide / Math.max(w, h)));
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+      const ctx = cv.getContext("2d");
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
+      return { cv, w, h, scale };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function download(blob, name) {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function loadScript(src) {
+    return new Promise((ok, ko) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ko(new Error("chargement impossible")); document.head.appendChild(s); });
+  }
+  const exportMsg = document.getElementById("export-msg");
+  async function runExport(btn, kind) {
+    if (btn.getAttribute("aria-busy") === "true") return;
+    btn.setAttribute("aria-busy", "true"); exportMsg.textContent = "Préparation…";
+    const stamp = new Date().toISOString().slice(0, 10), base = `arbre-${(S.title || "famille").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-")}-${stamp}`;
+    try {
+      const { cv, w, h, scale } = await exportCanvas();
+      if (kind === "png") {
+        const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+        download(blob, base + ".png");
+        exportMsg.textContent = `PNG ${cv.width} × ${cv.height} px`;
+      } else {
+        if (!window.jspdf) await loadScript("vendor/jspdf/jspdf.umd.min.js");
+        const { jsPDF } = window.jspdf;
+        const pw = w * 0.75, ph = h * 0.75; // CSS px -> pt
+        const pdf = new jsPDF({ orientation: pw > ph ? "landscape" : "portrait", unit: "pt", format: [pw, ph], compress: true });
+        pdf.setProperties({ title: S.title || "Arbre généalogique", creator: "famille.rospars.me" });
+        pdf.addImage(cv.toDataURL("image/png"), "PNG", 0, 0, pw, ph, undefined, "FAST");
+        pdf.save(base + ".pdf");
+        exportMsg.textContent = `PDF ${Math.round(pw / 72 * 2.54)} × ${Math.round(ph / 72 * 2.54)} cm, ${Math.round(96 * scale)} dpi`;
+      }
+    } catch (e) {
+      exportMsg.textContent = "Export impossible : " + e.message;
+    } finally { btn.removeAttribute("aria-busy"); }
+  }
+  document.getElementById("export-png").onclick = ev => runExport(ev.currentTarget, "png");
+  document.getElementById("export-pdf").onclick = ev => runExport(ev.currentTarget, "pdf");
   modeToggle.addEventListener("change", () => {
     familyMode = modeToggle.checked;
     syncLegend();

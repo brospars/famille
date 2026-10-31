@@ -213,3 +213,7 @@ input[type="range"]{width:100%;accent-color:var(--accent)}
 .fam-legend b{font-weight:600;color:var(--ink)}
 .node[data-person]:focus-visible rect.box{stroke:var(--accent);stroke-width:2}
 .node.selected rect.box{stroke:var(--accent);stroke-width:2}
+
+.btns.export{margin-left:auto;align-items:center}
+.export-msg{font-size:13px;color:var(--muted);margin-left:4px}
+.btn[aria-busy="true"]{opacity:.6;cursor:progress}

@@ -60,6 +60,11 @@
         <button type="button" class="btn" id="zoom-root">Recentrer</button>
       </div>
       <label class="check switch" for="family-view"><input type="checkbox" id="family-view"> Vue par familles</label>
+      <div class="btns export" role="group" aria-label="Exporter l'arbre">
+        <button type="button" class="btn" id="export-png" title="Image PNG haute définition de tout l'arbre">Exporter en PNG</button>
+        <button type="button" class="btn" id="export-pdf" title="Document PDF de tout l'arbre, prêt à imprimer">PDF</button>
+        <span class="export-msg" id="export-msg" role="status" aria-live="polite"></span>
+      </div>
     </div>
     <div class="legend">
       <span><i class="sw doc"></i>Document familial ou officiel</span>
