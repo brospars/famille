@@ -656,7 +656,7 @@ function run(data) {
         fillOpacity: 0.35, dashArray: pl.uncertain ? "4 3" : null
       });
       const list = evs.map(e => `<li><span class="ev-ico">${e.ico}</span>${esc(fmtDate(e.date)) || "date inconnue"} · ${e.ids.map(id => people.get(id)).filter(Boolean).map(p => `<button type="button" class="plink" data-person="${esc(p.id)}">${esc(fullName(p))}</button>`).join(" et ")}</li>`).join("");
-      m.bindPopup(`<h3>${esc(pl.name)}</h3><div>${esc(pl.dept)}${pl.old ? ` · autrefois ${esc(pl.old)}` : ""}</div>${pl.note ? `<p class="warn">${esc(pl.note)}</p>` : ""}<ul>${list}</ul>`, { maxWidth: 300 });
+      m.bindPopup(`<h3>${esc(pl.name)}</h3><div>${esc(pl.dept)}${pl.old ? ` · autrefois ${esc(pl.old)}` : ""}</div>${pl.note ? `<p${pl.uncertain ? ' class="warn"' : ""}>${esc(pl.note)}</p>` : ""}<ul>${list}</ul>`, { maxWidth: 300 });
       m.bindTooltip(`${pl.name} (${evs.length})`);
       m.addTo(placeLayer);
       markers[pid] = m;
